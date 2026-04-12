@@ -316,9 +316,13 @@ func opRecordToProvider(r opRecord, zoneID string) provider.Record {
 }
 
 // providerToOpRecord converts a provider.Record to an opRecord for the API.
-func providerToOpRecord(r provider.Record) opRecord {
+func providerToOpRecord(r provider.Record, zoneID string) opRecord {
+	nname := r.Name
+	if nname != zoneID {
+		nname = strings.TrimSuffix(r.Name, "."+zoneID)
+	}
 	return opRecord{
-		Name:  r.Name,
+		Name:  nname,
 		TTL:   r.TTL,
 		Type:  strings.ToLower(string(r.Type)),
 		Value: r.Value,
@@ -330,7 +334,8 @@ func providerToOpRecord(r provider.Record) opRecord {
 
 // CreateRecord adds a new DNS record to the given zone.
 func (p *opProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
-	newRec := providerToOpRecord(r)
+	newRec := providerToOpRecord(r, zoneID)
+
 	body := map[string]any{
 		"name":    zoneID,
 		"records": map[string]any{"add": []opRecord{newRec}},
@@ -354,12 +359,20 @@ func (p *opProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, 
 	if err := json.Unmarshal([]byte(recordID), &original); err != nil {
 		return provider.Record{}, fmt.Errorf("openprovider: decoding original record from ID: %w", err)
 	}
-	updated := providerToOpRecord(r)
+
+	if original.Name != zoneID {
+		original.Name = strings.TrimSuffix(original.Name, "."+zoneID)
+	}
+
+	updated := providerToOpRecord(r, zoneID)
 	body := map[string]any{
 		"name": zoneID,
 		"records": map[string]any{
 			"update": []map[string]any{
-				{"original_record": original, "record": updated},
+				{
+					"original_record": original,
+					"record":          updated,
+				},
 			},
 		},
 	}
