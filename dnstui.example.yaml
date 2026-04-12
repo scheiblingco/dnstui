@@ -1,0 +1,41 @@
+# dnstui configuration file
+# All values can be overridden with DNSTUI_<KEY> environment variables.
+# Keys use underscores; nested keys use _ as separator (e.g. DNSTUI_CACHE_TTL_SECONDS).
+
+log_level: info   # debug | info | warn | error
+
+cache:
+  ttl_seconds: 300   # how long to cache account/zone lists (seconds)
+  disk_cache: true   # persist cache to $XDG_CACHE_HOME/dnstui/ between sessions
+
+providers:
+  # --- Cloudflare example ---
+  - name: "CF Personal"
+    type: cloudflare
+    settings:
+      api_token: "YOUR_CF_API_TOKEN"
+      # Alternatively, use API key + email:
+      # api_key: "YOUR_GLOBAL_API_KEY"
+      # api_email: "you@example.com"
+
+  # --- Technitium example ---
+  - name: "Home DNS"
+    type: technitium
+    settings:
+      base_url: "http://192.168.1.1:5380"
+      api_key: "YOUR_TECHNITIUM_API_KEY"
+
+  # --- ClouDNS example ---
+  # - name: "ClouDNS Main"
+  #   type: cloudns
+  #   settings:
+  #     auth_id: "12345"
+  #     auth_password: "YOUR_PASSWORD"
+  #     # For sub-auth:
+  #     # sub_auth_id: "67890"
+
+  # --- Openprovider example ---
+  # - name: "Openprovider"
+  #   type: openprovider
+  #   settings:
+  #     api_token: "YOUR_OPENPROVIDER_API_TOKEN"
