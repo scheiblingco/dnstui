@@ -7,12 +7,12 @@
 package cloudns
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -105,22 +105,31 @@ func (p *cnsProvider) authFields(extra map[string]any) map[string]any {
 }
 
 // post sends a POST request with a JSON body and returns the raw response bytes.
-func (p *cnsProvider) post(ctx context.Context, path string, body map[string]any) ([]byte, error) {
-	b, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("cloudns: marshaling request body: %w", err)
+func (p *cnsProvider) post(ctx context.Context, path string, query map[string]any) ([]byte, error) {
+	// b, err := json.Marshal(body)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("cloudns: marshaling request body: %w", err)
+	// }
+
+	queryParams := url.Values{}
+	for k, v := range query {
+		queryParams.Set(k, fmt.Sprintf("%v", v))
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.settings.BaseURL+path, bytes.NewReader(b))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.settings.BaseURL+path+"?"+queryParams.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	// return nil, fmt.Errorf("Request to %s with query params: %v", p.settings.BaseURL+path+"?"+queryParams.Encode(), query) // Debug log
+
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
+
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
@@ -170,19 +179,15 @@ func (p *cnsProvider) ListAccounts(ctx context.Context) ([]provider.Account, err
 
 // cnsZoneInfo is the per-zone object in the list-zones response.
 type cnsZoneInfo struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 // ListZones returns all DNS zones for the account.  The accountID parameter is
 // ignored (ClouDNS uses auth credentials to determine scope).
-// TODO: Fix format of API data
-// Example error responses
-// {"status":"Failed","statusDescription":"Missing required parameter 'page'."}
-// {"status":"Failed","statusDescription":"Wrong or missing required parameter 'rows-per-page'."}
-// Example success response
-// [{"name":"testdomaina.com","id":"123456","type":"master","hasBulk":false,"is_cloud":0,"zone":"domain","status":"1","serial":"2025110110","isUpdated":1}, {"name":"testdomain2.com","id":"9473965","type":"master","hasBulk":false,"is_cloud":0,"zone":"domain","status":"1","serial":"2025110110","isUpdated":1}]
+// Success response is a JSON array:
+// [{"name":"example.com","id":"123456","type":"master",...}, ...]
 func (p *cnsProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone, error) {
 	const pageSize = 100
 	var zones []provider.Zone
@@ -200,41 +205,22 @@ func (p *cnsProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone,
 			return nil, err
 		}
 
-		// The response is an object: {"count":"N","example.com":{...},...}
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("cloudns: parsing zone list: %w, data %s", err, string(data))
+		// Response is a JSON array of zone objects.
+		var page_zones []cnsZoneInfo
+		if err := json.Unmarshal(data, &page_zones); err != nil {
+			return nil, fmt.Errorf("cloudns: parsing zone list: %w", err)
 		}
 
-		// Parse the total count so we know when to stop paginating.
-		var total int
-		if c, ok := raw["count"]; ok {
-			var cs string
-			if json.Unmarshal(c, &cs) == nil {
-				total, _ = strconv.Atoi(cs)
-			} else {
-				json.Unmarshal(c, &total) //nolint:errcheck
-			}
-		}
-
-		pageCount := 0
-		for k, v := range raw {
-			if k == "count" {
-				continue
-			}
-			var z cnsZoneInfo
-			if err := json.Unmarshal(v, &z); err != nil || z.Name == "" {
-				continue
-			}
+		for _, z := range page_zones {
 			zones = append(zones, provider.Zone{
 				ID:        z.Name,
 				Name:      z.Name,
 				AccountID: p.accountID(),
 			})
-			pageCount++
 		}
 
-		if pageCount == 0 || (total > 0 && len(zones) >= total) {
+		// Fewer results than requested means we've reached the last page.
+		if len(page_zones) < pageSize {
 			break
 		}
 	}
@@ -275,8 +261,8 @@ type cnsRecord struct {
 
 // ListRecords returns all DNS records for the given zone name.
 func (p *cnsProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.Record, error) {
-	body := p.authFields(map[string]any{"domain-name": zoneID})
-	data, err := p.post(ctx, "/dns/records.json", body)
+	query := p.authFields(map[string]any{"domain-name": zoneID})
+	data, err := p.post(ctx, "/dns/records.json", query)
 	if err != nil {
 		return nil, fmt.Errorf("cloudns: listing records for %s: %w", zoneID, err)
 	}
@@ -362,6 +348,10 @@ type cnsStatusResp struct {
 
 // CreateRecord adds a new DNS record to the given zone.
 func (p *cnsProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
+	if r.Name == "@" {
+		r.Name = ""
+	}
+
 	body := p.authFields(map[string]any{
 		"domain-name": zoneID,
 		"record-type": string(r.Type),
