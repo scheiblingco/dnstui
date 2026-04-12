@@ -180,6 +180,8 @@ All list methods must return an empty (non-nil) slice when there are no results.
 | `Zone` | A DNS zone (domain), linked to an `Account` by `AccountID` |
 | `Record` | A single DNS resource record |
 | `RecordType` | Typed string constant: `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `SRV`, `CAA`, `PTR`, `SOA`, `TLSA`, `SSHFP`, `NAPTR` |
+| `SearchEntry` | A flattened account-or-domain item used by the global search index |
+| `SearchEntryKind` | Typed string: `"account"` or `"domain"` |
 
 `Record.Extra map[string]any` carries provider-specific fields that don't fit the common model (e.g. Cloudflare's `proxied` flag, Technitium `comments`). Keys are lower-snake-case strings.
 
@@ -197,6 +199,12 @@ func init() {
 The registry maps type name → `Constructor` (`func(config.ProviderConfig) (Provider, error)`).
 
 `provider.NewAll(cfgs []config.ProviderConfig)` is called at startup to instantiate all configured providers; it fails fast on the first construction error.
+
+#### Search Cache
+
+`cache.go` provides `BuildSearchCache(ctx, providers)` which walks every provider's accounts and zones and returns a flat `[]SearchEntry` slice. The root TUI model calls this as a background `tea.Cmd` immediately on startup (via `Model.Init()`). Each entry carries its `Kind` (`"account"` or `"domain"`), a pre-formatted display `Label`, a reference to the owning `Provider`, and either the `Account` or `Zone` value.
+
+When the background load completes, a `CacheLoadedMsg` is dispatched to the root model, which stores the entries and — if the `GlobalSearch` view is already open — updates it live.
 
 ---
 
@@ -280,6 +288,7 @@ All provider API calls are dispatched as `tea.Cmd` (non-blocking). A `spinner` c
 | `RecordsLoadedMsg` | Async records response |
 | `RecordSavedMsg` | Create/update completed |
 | `RecordDeletedMsg` | Delete completed |
+| `CacheLoadedMsg` | Startup search-cache background load completed |
 
 **Views:**
 
@@ -290,13 +299,13 @@ All provider API calls are dispatched as `tea.Cmd` (non-blocking). A `spinner` c
 | `recordlist.go` | `RecordList` | Table of records (`n` new, `e` edit, `d` delete, `r` refresh); delegates CRUD to form/dialog |
 | `recordform.go` | `RecordForm` | Per-field text inputs for add/edit; `ctrl+s` to save; client-side validation before submit |
 | `confirmdialog.go` | `ConfirmDialog` | Generic yes/no overlay; executes any `tea.Cmd` on confirmation |
-| `globalsearch.go` | `GlobalSearch` | Loads all records from all zones in parallel, then filters in-memory |
+| `globalsearch.go` | `GlobalSearch` | Ctrl+K modal showing all cached accounts and domains across providers; filters as you type; Enter navigates to the selected account's ZoneList or domain's RecordList |
 
-**Key bindings (global):** `ctrl+c` quit | `esc` back | `r` refresh | `n` new | `e` edit | `d` delete | `tab`/`↑↓` navigate | `/` filter.
+**Key bindings (global):** `ctrl+c` quit | `ctrl+k` open global search | `esc` back | `r` refresh | `n` new | `e` edit | `d` delete | `tab`/`↑↓` navigate | `/` filter.
 
 ---
 
-### `internal/cache/` _(Phase 6)_
+### `internal/cache/` _(not used — caching is handled by `internal/provider/cache.go`)_
 
 In-memory TTL cache for `Account` and `Zone` lists (keyed by provider + account ID). When `DiskCache` is enabled, the cache is serialised to `$XDG_CACHE_HOME/dnstui/cache.json` on exit and reloaded on startup. Cache can be manually invalidated with the `r` keybind in the TUI.
 

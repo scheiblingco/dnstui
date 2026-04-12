@@ -1,149 +1,84 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
 // ── GlobalSearch ──────────────────────────────────────────────────────────────
 
-// searchResult is a matched DNS record with context about which provider/zone it lives in.
-type searchResult struct {
-	providerName string
-	zoneName     string
-	record       provider.Record
-}
-
-func (r searchResult) display() string {
-	ttl := fmt.Sprintf("%d", r.record.TTL)
-	if r.record.TTL == 0 {
-		ttl = "auto"
-	}
-	return fmt.Sprintf("%-14s %-30s %-8s ttl:%-6s  %s  [%s]",
-		r.providerName,
-		r.record.Name,
-		string(r.record.Type),
-		ttl,
-		r.record.Value,
-		r.zoneName,
-	)
-}
-
-// allZonesLoadedMsg carries the full cross-provider zone map after initial load.
-type allZonesLoadedMsg struct {
-	zones []provider.Zone
-	prMap map[string]provider.Provider // zone.ID → provider
-	err   error
-}
-
-// allRecordsLoadedMsg carries all records from a zone.
-type allRecordsLoadedMsg struct {
-	providerName string
-	zoneName     string
-	records      []provider.Record
-	err          error
-}
-
-// GlobalSearch lets the user search across all records in all zones.
+// GlobalSearch is a modal search overlay (opened with Ctrl+K from any screen)
+// that lets the user filter and navigate to accounts and domains across all
+// providers. The entry list is populated from the startup search cache.
 type GlobalSearch struct {
-	providers []provider.Provider
+	entries   []provider.SearchEntry
 	input     textinput.Model
-	spinner   spinner.Model
-	loading   bool
-	loadMsg   string
-	results   []searchResult
 	cursor    int
-	provMap   map[string]provider.Provider
+	lastQuery string
 }
 
-// NewGlobalSearch creates the global search view.
-func NewGlobalSearch(providers []provider.Provider) *GlobalSearch {
+// NewGlobalSearch creates the global search modal with pre-cached entries.
+func NewGlobalSearch(entries []provider.SearchEntry) *GlobalSearch {
 	ti := textinput.New()
-	ti.Placeholder = "Search records across all zones…"
+	ti.Placeholder = "Search accounts and domains…"
 	ti.CharLimit = 128
 	ti.Width = 60
 	ti.Focus()
 
-	sp := spinner.New()
-	sp.Spinner = spinner.Dot
-	sp.Style = lipgloss.NewStyle().Foreground(colorPrimary)
-
 	return &GlobalSearch{
-		providers: providers,
-		input:     ti,
-		spinner:   sp,
-		provMap:   map[string]provider.Provider{},
+		entries: entries,
+		input:   ti,
 	}
 }
 
 func (m *GlobalSearch) Init() tea.Cmd {
-	m.loading = true
-	m.loadMsg = "Loading zones…"
-	return tea.Batch(m.spinner.Tick, loadAllZones(m.providers))
+	return textinput.Blink
 }
 
 func (m *GlobalSearch) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc":
+		case "esc", "ctrl+k":
 			return m, func() tea.Msg { return PopMsg{} }
+
 		case "up":
 			if m.cursor > 0 {
 				m.cursor--
 			}
 			return m, nil
+
 		case "down":
-			if m.cursor < len(m.results)-1 {
+			matches := m.filtered(strings.ToLower(strings.TrimSpace(m.input.Value())))
+			if m.cursor < len(matches)-1 {
 				m.cursor++
 			}
 			return m, nil
-		}
 
-	case allZonesLoadedMsg:
-		if msg.err != nil {
-			m.loading = false
-			return m, func() tea.Msg { return ErrorMsg{Err: msg.err} }
-		}
-		m.provMap = msg.prMap
-		m.loadMsg = fmt.Sprintf("Loading records from %d zones…", len(msg.zones))
-		cmds := make([]tea.Cmd, len(msg.zones))
-		for i, z := range msg.zones {
-			cmds[i] = loadZoneRecords(msg.prMap[z.ID], z)
-		}
-		return m, tea.Batch(cmds...)
-
-	case allRecordsLoadedMsg:
-		if msg.err == nil {
-			for _, r := range msg.records {
-				m.results = append(m.results, searchResult{
-					providerName: msg.providerName,
-					zoneName:     msg.zoneName,
-					record:       r,
-				})
+		case "enter":
+			matches := m.filtered(strings.ToLower(strings.TrimSpace(m.input.Value())))
+			if m.cursor >= 0 && m.cursor < len(matches) {
+				return m, navigate(matches[m.cursor])
 			}
-		}
-		// loading finishes naturally — all zone cmds fire in parallel
-		m.loading = false
-
-	case spinner.TickMsg:
-		if m.loading {
-			var cmd tea.Cmd
-			m.spinner, cmd = m.spinner.Update(msg)
-			return m, cmd
+			return m, nil
 		}
 	}
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+
+	// Reset the cursor whenever the query changes.
+	query := strings.ToLower(strings.TrimSpace(m.input.Value()))
+	if query != m.lastQuery {
+		m.cursor = 0
+		m.lastQuery = query
+	}
+
 	return m, cmd
 }
 
@@ -153,87 +88,63 @@ func (m *GlobalSearch) View() string {
 	sb.WriteString(title + "\n")
 	sb.WriteString(m.input.View() + "\n\n")
 
-	if m.loading {
-		sb.WriteString(m.spinner.View() + " " + m.loadMsg + "\n")
-		return sb.String()
-	}
-
 	query := strings.ToLower(strings.TrimSpace(m.input.Value()))
 	matches := m.filtered(query)
 
-	if query == "" {
-		sb.WriteString(styleSubtitle.Render(fmt.Sprintf("%d total records indexed. Type to search.", len(m.results))) + "\n")
-	} else if len(matches) == 0 {
-		sb.WriteString(styleSubtitle.Render("No matches.") + "\n")
-	} else {
-		sb.WriteString(styleSubtitle.Render(fmt.Sprintf("%d match(es):", len(matches))) + "\n\n")
-		for i, r := range matches {
-			line := r.display()
+	switch {
+	case len(m.entries) == 0:
+		sb.WriteString(styleSubtitle.Render("Cache is loading, please try again in a moment.") + "\n")
+	case query == "":
+		sb.WriteString(styleSubtitle.Render(fmt.Sprintf("%d entries indexed. Type to filter.", len(m.entries))) + "\n\n")
+		for i, e := range m.entries {
 			if i == m.cursor {
-				sb.WriteString(styleSelected.Render("▶ "+line) + "\n")
+				sb.WriteString(styleSelected.Render("▶ "+e.Label) + "\n")
 			} else {
-				sb.WriteString("  " + line + "\n")
+				sb.WriteString("  " + e.Label + "\n")
+			}
+		}
+	case len(matches) == 0:
+		sb.WriteString(styleSubtitle.Render("No matches.") + "\n")
+	default:
+		sb.WriteString(styleSubtitle.Render(fmt.Sprintf("%d match(es):", len(matches))) + "\n\n")
+		for i, e := range matches {
+			if i == m.cursor {
+				sb.WriteString(styleSelected.Render("▶ "+e.Label) + "\n")
+			} else {
+				sb.WriteString("  " + e.Label + "\n")
 			}
 		}
 	}
 
-	sb.WriteString("\n" + styleHelp.Render("type to search  ↑↓: navigate  esc: back"))
+	sb.WriteString("\n" + styleHelp.Render("type to filter  ↑↓: navigate  enter: open  esc/ctrl+k: close"))
 	return sb.String()
 }
 
-// filtered returns results matching the query string.
-func (m *GlobalSearch) filtered(query string) []searchResult {
+// filtered returns entries whose label contains the query string.
+// When query is empty the full entry list is returned.
+func (m *GlobalSearch) filtered(query string) []provider.SearchEntry {
 	if query == "" {
-		return nil
+		return m.entries
 	}
-	var out []searchResult
-	for _, r := range m.results {
-		if strings.Contains(strings.ToLower(r.record.Name), query) ||
-			strings.Contains(strings.ToLower(r.record.Value), query) ||
-			strings.Contains(strings.ToLower(string(r.record.Type)), query) ||
-			strings.Contains(strings.ToLower(r.zoneName), query) ||
-			strings.Contains(strings.ToLower(r.providerName), query) {
-			out = append(out, r)
+	var out []provider.SearchEntry
+	for _, e := range m.entries {
+		if strings.Contains(strings.ToLower(e.Label), query) {
+			out = append(out, e)
 		}
 	}
 	return out
 }
 
-// loadAllZones fetches zones from all providers in parallel and aggregates results.
-func loadAllZones(providers []provider.Provider) tea.Cmd {
-	return func() tea.Msg {
-		var allZones []provider.Zone
-		prMap := map[string]provider.Provider{}
-
-		for _, p := range providers {
-			accounts, err := p.ListAccounts(context.Background())
-			if err != nil {
-				return allZonesLoadedMsg{err: err}
-			}
-			for _, acc := range accounts {
-				zones, err := p.ListZones(context.Background(), acc.ID)
-				if err != nil {
-					return allZonesLoadedMsg{err: err}
-				}
-				for _, z := range zones {
-					allZones = append(allZones, z)
-					prMap[z.ID] = p
-				}
-			}
-		}
-		return allZonesLoadedMsg{zones: allZones, prMap: prMap}
+// navigate returns the tea.Cmd that pushes the appropriate view for the selected entry:
+// account entries open the ZoneList; domain entries open the RecordList.
+func navigate(e provider.SearchEntry) tea.Cmd {
+	switch e.Kind {
+	case provider.SearchEntryKindAccount:
+		view := NewZoneList(e.Provider, []provider.Account{e.Account})
+		return func() tea.Msg { return PushMsg{Model: view} }
+	case provider.SearchEntryKindDomain:
+		view := NewRecordList(e.Provider, e.Zone)
+		return func() tea.Msg { return PushMsg{Model: view} }
 	}
-}
-
-// loadZoneRecords fetches all records from a single zone.
-func loadZoneRecords(p provider.Provider, z provider.Zone) tea.Cmd {
-	return func() tea.Msg {
-		records, err := p.ListRecords(context.Background(), z.ID)
-		return allRecordsLoadedMsg{
-			providerName: p.FriendlyName(),
-			zoneName:     z.Name,
-			records:      records,
-			err:          err,
-		}
-	}
+	return nil
 }

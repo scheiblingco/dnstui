@@ -20,8 +20,8 @@ DNSTUI has a modular drop-in system for providers. The initial implementation sh
 - Configuration via environment variables, CLI flags, or configuration file
 - Validation of input data
 - Error handling and logging
-- Support for "global search" function to quickly enter a domain
-- Caching for lists of accounts and domains to improve performance
+- **Global search** (`Ctrl+K` from any screen) — instantly filter and navigate to any account or domain across all providers
+- Startup caching of accounts and domains for fast, responsive search
 
 ### Cloudflare
 - Support for multiple accounts with a single or multiple logins

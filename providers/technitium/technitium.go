@@ -150,6 +150,11 @@ func (p *tProvider) doRequest(ctx context.Context, method, apiPath string, param
 			lastErr = err
 			continue
 		}
+
+		if resp.StatusCode > 299 {
+			return nil, fmt.Errorf("technitium: API request to %s failed with status %d", apiPath, resp.StatusCode)
+		}
+
 		b, readErr := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 		resp.Body.Close()
 		if readErr != nil {
@@ -174,7 +179,7 @@ func decodeResponse[T any](raw []byte, apiPath string) (T, error) {
 	}
 	if env.Status != "ok" {
 		var zero T
-		return zero, fmt.Errorf("technitium: %s API error: %s", apiPath, env.Message)
+		return zero, fmt.Errorf("technitium: %s API error: %s %v", apiPath, env.Message, env)
 	}
 	return env.Response, nil
 }
@@ -299,7 +304,7 @@ type tRDATA struct {
 
 // ListRecords returns all records in the given zone (by zone name).
 func (p *tProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.Record, error) {
-	params := url.Values{"zone": {zoneID}}
+	params := url.Values{"zone": {zoneID}, "domain": {zoneID}, "listZone": {"true"}}
 	raw, err := p.doGET(ctx, "zones/records/get", params)
 	if err != nil {
 		return nil, fmt.Errorf("technitium: listing records for zone %s: %w", zoneID, err)
@@ -318,7 +323,7 @@ func (p *tProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.
 
 // CreateRecord adds a new record via Technitium's zones/records/add endpoint.
 func (p *tProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
-	params := sharedToTechParams(zoneID, r)
+	params := sharedToTechParams(zoneID, r, nil)
 	raw, err := p.doGET(ctx, "zones/records/add", params)
 	if err != nil {
 		return provider.Record{}, fmt.Errorf("technitium: creating record in zone %s: %w", zoneID, err)
@@ -339,7 +344,37 @@ func (p *tProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, r
 	if len(parts) != 3 {
 		return provider.Record{}, fmt.Errorf("technitium: invalid recordID format")
 	}
-	params := sharedToTechParams(zoneID, r)
+
+	searchParams := url.Values{
+		"zone":   {zoneID},
+		"domain": {parts[0]},
+	}
+
+	oldRecord, err := p.doGET(ctx, "zones/records/get", searchParams)
+	if err != nil {
+		return provider.Record{}, fmt.Errorf("technitium: fetching old record in zone %s: %w", zoneID, err)
+	}
+
+	zResp, err := decodeResponse[tRecordsResponse](oldRecord, "zones/records/get")
+	if err != nil {
+		return provider.Record{}, err
+	}
+
+	var oldRec provider.Record
+	for _, record := range zResp.Records {
+		if record.Name == parts[0] && string(record.Type) == parts[1] {
+			oldRec = tRecordToShared(record, zoneID)
+			if oldRec.ID == recordID {
+				break
+			}
+		}
+	}
+
+	if oldRec.ID == "" {
+		return provider.Record{}, fmt.Errorf("technitium: old record not found for update in zone %s", zoneID)
+	}
+
+	params := sharedToTechParams(zoneID, r, &oldRec)
 	// Add old-value params for the overwrite call.
 	params.Set("type", parts[1])
 	params.Set("domain", parts[0])
@@ -468,81 +503,171 @@ func tExtractValue(r tRecord) (string, int) {
 }
 
 // sharedToTechParams builds the query parameters for add/update calls.
-func sharedToTechParams(zoneID string, r provider.Record) url.Values {
+func sharedToTechParams(zoneID string, r provider.Record, oldRecord *provider.Record) url.Values {
+	domainx := r.Name
+	if domainx == "@" {
+		domainx = zoneID
+	}
+
+	if !strings.HasSuffix(domainx, "."+zoneID) && domainx != zoneID {
+		domainx = domainx + "." + zoneID
+	}
+
 	params := url.Values{
 		"zone":   {zoneID},
-		"domain": {r.Name},
-		"type":   {string(r.Type)},
-		"ttl":    {fmt.Sprintf("%d", r.TTL)},
+		"domain": {domainx},
+
+		"type": {string(r.Type)},
+		"ttl":  {fmt.Sprintf("%d", r.TTL)},
+	}
+
+	rval := r
+	if oldRecord != nil {
+		rval = *oldRecord
 	}
 
 	switch r.Type {
 	case provider.RecordTypeA, provider.RecordTypeAAAA:
-		params.Set("ipAddress", r.Value)
+		params.Set("ipAddress", rval.Value)
+		if oldRecord != nil {
+			params.Set("newIpAddress", r.Value)
+		}
 	case provider.RecordTypeCNAME:
 		params.Set("cname", r.Value)
 	case provider.RecordTypeNS:
-		params.Set("nameServer", r.Value)
+		params.Set("nameServer", rval.Value)
+		if oldRecord != nil {
+			params.Set("newNameServer", r.Value)
+		}
 	case provider.RecordTypePTR:
-		params.Set("ptrName", r.Value)
+		params.Set("ptrName", rval.Value)
+		if oldRecord != nil {
+			params.Set("newPtrName", r.Value)
+		}
 	case provider.RecordTypeMX:
-		params.Set("exchange", r.Value)
-		params.Set("preference", fmt.Sprintf("%d", r.Priority))
+		params.Set("exchange", rval.Value)
+		params.Set("preference", fmt.Sprintf("%d", rval.Priority))
+		if oldRecord != nil {
+			params.Set("newExchange", r.Value)
+			params.Set("newPreference", fmt.Sprintf("%d", r.Priority))
+		}
 	case provider.RecordTypeTXT:
-		params.Set("text", r.Value)
+		params.Set("text", rval.Value)
+		if oldRecord != nil {
+			params.Set("newText", r.Value)
+		}
 	case provider.RecordTypeSRV:
-		params.Set("target", r.Value)
-		params.Set("priority", fmt.Sprintf("%d", r.Priority))
-		if w, ok := r.Extra["weight"].(int); ok {
+		params.Set("target", rval.Value)
+		params.Set("priority", fmt.Sprintf("%d", rval.Priority))
+		if w, ok := rval.Extra["weight"].(int); ok {
 			params.Set("weight", fmt.Sprintf("%d", w))
 		}
-		if port, ok := r.Extra["port"].(int); ok {
+		if port, ok := rval.Extra["port"].(int); ok {
 			params.Set("port", fmt.Sprintf("%d", port))
 		}
+		if oldRecord != nil {
+			params.Set("newTarget", r.Value)
+			params.Set("newPriority", fmt.Sprintf("%d", r.Priority))
+			if w, ok := r.Extra["weight"].(int); ok {
+				params.Set("newWeight", fmt.Sprintf("%d", w))
+			}
+			if port, ok := r.Extra["port"].(int); ok {
+				params.Set("newPort", fmt.Sprintf("%d", port))
+			}
+		}
 	case provider.RecordTypeCAA:
-		params.Set("value", r.Value)
-		if flags, ok := toInt(r.Extra["caa_flags"]); ok {
+		params.Set("value", rval.Value)
+		if flags, ok := toInt(rval.Extra["caa_flags"]); ok {
 			params.Set("flags", fmt.Sprintf("%d", flags))
 		}
-		if tag, ok := r.Extra["caa_tag"].(string); ok {
+		if tag, ok := rval.Extra["caa_tag"].(string); ok {
 			params.Set("tag", tag)
 		}
+		if oldRecord != nil {
+			params.Set("newValue", r.Value)
+			if flags, ok := toInt(r.Extra["caa_flags"]); ok {
+				params.Set("newFlags", fmt.Sprintf("%d", flags))
+			}
+			if tag, ok := r.Extra["caa_tag"].(string); ok {
+				params.Set("newTag", tag)
+			}
+		}
 	case provider.RecordTypeTLSA:
-		params.Set("certificateAssociationData", r.Value)
-		if v, ok := toInt(r.Extra["tlsa_usage"]); ok {
+		params.Set("certificateAssociationData", rval.Value)
+		if v, ok := toInt(rval.Extra["tlsa_usage"]); ok {
 			params.Set("certificateUsage", fmt.Sprintf("%d", v))
 		}
-		if v, ok := toInt(r.Extra["tlsa_selector"]); ok {
+		if v, ok := toInt(rval.Extra["tlsa_selector"]); ok {
 			params.Set("selector", fmt.Sprintf("%d", v))
 		}
-		if v, ok := toInt(r.Extra["tlsa_matching"]); ok {
+		if v, ok := toInt(rval.Extra["tlsa_matching"]); ok {
 			params.Set("matchingType", fmt.Sprintf("%d", v))
 		}
+		if oldRecord != nil {
+			params.Set("newCertificateAssociationData", r.Value)
+			if v, ok := toInt(r.Extra["tlsa_usage"]); ok {
+				params.Set("newCertificateUsage", fmt.Sprintf("%d", v))
+			}
+			if v, ok := toInt(r.Extra["tlsa_selector"]); ok {
+				params.Set("newSelector", fmt.Sprintf("%d", v))
+			}
+			if v, ok := toInt(r.Extra["tlsa_matching"]); ok {
+				params.Set("newMatchingType", fmt.Sprintf("%d", v))
+			}
+		}
 	case provider.RecordTypeSSHFP:
-		params.Set("fingerprint", r.Value)
-		if v, ok := toInt(r.Extra["sshfp_algorithm"]); ok {
+		params.Set("fingerprint", rval.Value)
+		if v, ok := toInt(rval.Extra["sshfp_algorithm"]); ok {
 			params.Set("algorithm", fmt.Sprintf("%d", v))
 		}
-		if v, ok := toInt(r.Extra["sshfp_fp_type"]); ok {
+		if v, ok := toInt(rval.Extra["sshfp_fp_type"]); ok {
 			params.Set("fingerprintType", fmt.Sprintf("%d", v))
 		}
+		if oldRecord != nil {
+			params.Set("newFingerprint", r.Value)
+			if v, ok := toInt(r.Extra["sshfp_algorithm"]); ok {
+				params.Set("newAlgorithm", fmt.Sprintf("%d", v))
+			}
+			if v, ok := toInt(r.Extra["sshfp_fp_type"]); ok {
+				params.Set("newFingerprintType", fmt.Sprintf("%d", v))
+			}
+		}
 	case provider.RecordTypeNAPTR:
-		params.Set("replacement", r.Value)
-		params.Set("order", fmt.Sprintf("%d", r.Priority))
-		if v, ok := toInt(r.Extra["naptr_pref"]); ok {
+		params.Set("replacement", rval.Value)
+		params.Set("order", fmt.Sprintf("%d", rval.Priority))
+		if v, ok := toInt(rval.Extra["naptr_pref"]); ok {
 			params.Set("preference", fmt.Sprintf("%d", v))
 		}
-		if v, ok := r.Extra["naptr_flags"].(string); ok {
+		if v, ok := rval.Extra["naptr_flags"].(string); ok {
 			params.Set("flags", v)
 		}
-		if v, ok := r.Extra["naptr_service"].(string); ok {
+		if v, ok := rval.Extra["naptr_service"].(string); ok {
 			params.Set("services", v)
 		}
-		if v, ok := r.Extra["naptr_regexp"].(string); ok {
+		if v, ok := rval.Extra["naptr_regexp"].(string); ok {
 			params.Set("regexp", v)
 		}
+		if oldRecord != nil {
+			params.Set("newReplacement", r.Value)
+			params.Set("newOrder", fmt.Sprintf("%d", r.Priority))
+			if v, ok := toInt(r.Extra["naptr_pref"]); ok {
+				params.Set("newPreference", fmt.Sprintf("%d", v))
+			}
+			if v, ok := r.Extra["naptr_flags"].(string); ok {
+				params.Set("newFlags", v)
+			}
+			if v, ok := r.Extra["naptr_service"].(string); ok {
+				params.Set("newServices", v)
+			}
+			if v, ok := r.Extra["naptr_regexp"].(string); ok {
+				params.Set("newRegexp", v)
+			}
+		}
 	default:
-		params.Set("value", r.Value)
+		params.Set("value", rval.Value)
+		if oldRecord != nil {
+			params.Set("newValue", r.Value)
+		}
 	}
 
 	if comment, ok := r.Extra["comment"].(string); ok && comment != "" {

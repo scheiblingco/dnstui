@@ -6,6 +6,8 @@
 package tui
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -101,21 +103,29 @@ type RecordSavedMsg struct {
 // RecordDeletedMsg signals a delete completed.
 type RecordDeletedMsg struct{ Err error }
 
+// CacheLoadedMsg delivers the result of the startup search-cache background load.
+type CacheLoadedMsg struct {
+	Entries []provider.SearchEntry
+	Err     error
+}
+
 // ── Root model ────────────────────────────────────────────────────────────────
 
 // Model is the root Bubble Tea model. It owns the view stack and a shared
 // status/error line across the bottom.
 type Model struct {
-	stack      []tea.Model
-	statusText string
-	errorText  string
-	width      int
-	height     int
+	stack         []tea.Model
+	statusText    string
+	errorText     string
+	width         int
+	height        int
+	providers     []provider.Provider
+	searchEntries []provider.SearchEntry
 }
 
 // New creates the root TUI model with the provider list as the initial view.
 func New(providers []provider.Provider) Model {
-	m := Model{}
+	m := Model{providers: providers}
 	m.push(NewProviderList(providers))
 	return m
 }
@@ -134,9 +144,14 @@ func (m Model) top() tea.Model {
 	return m.stack[len(m.stack)-1]
 }
 
-// Init initialises the top view.
+// Init initialises the top view and triggers the background search-cache build
+// (if the cache has not already been populated, e.g. by RunWithSearch).
 func (m Model) Init() tea.Cmd {
-	return m.top().Init()
+	cmds := []tea.Cmd{m.top().Init()}
+	if len(m.searchEntries) == 0 && len(m.providers) > 0 {
+		cmds = append(cmds, buildSearchCache(m.providers))
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update handles messages and delegates to the top view.
@@ -152,9 +167,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
+		case "ctrl+k":
+			// Open global search unless it is already the active view.
+			if _, ok := m.top().(*GlobalSearch); !ok {
+				gs := NewGlobalSearch(m.searchEntries)
+				m.push(gs)
+				initCmd := gs.Init()
+				if m.width > 0 && m.height > 0 {
+					sized, sizeCmd := gs.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height - 2})
+					m.stack[len(m.stack)-1] = sized
+					return m, tea.Batch(initCmd, sizeCmd)
+				}
+				return m, initCmd
+			}
+			return m, nil
 		}
+
+	case CacheLoadedMsg:
+		if msg.Err != nil {
+			m.errorText = "search cache: " + msg.Err.Error()
+		} else {
+			m.searchEntries = msg.Entries
+			// If GlobalSearch is currently open, update its entries live.
+			if gs, ok := m.top().(*GlobalSearch); ok {
+				gs.entries = msg.Entries
+				m.stack[len(m.stack)-1] = gs
+			}
+		}
+		return m, nil
 
 	case PopMsg:
 		m.errorText = ""
@@ -224,10 +267,25 @@ func Run(providers []provider.Provider) error {
 }
 
 // RunWithSearch starts the TUI with the GlobalSearch view as the first screen.
+// The search cache is built synchronously before the program starts so the
+// list is immediately available when the modal opens.
 func RunWithSearch(providers []provider.Provider) error {
-	m := Model{}
-	m.push(NewGlobalSearch(providers))
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	_, err := p.Run()
+	entries, err := provider.BuildSearchCache(context.Background(), providers)
+	if err != nil {
+		return err
+	}
+	m := Model{providers: providers, searchEntries: entries}
+	m.push(NewGlobalSearch(entries))
+	prog := tea.NewProgram(m, tea.WithAltScreen())
+	_, err = prog.Run()
 	return err
+}
+
+// buildSearchCache is the tea.Cmd that populates the root model's search cache
+// in the background during normal TUI operation.
+func buildSearchCache(providers []provider.Provider) tea.Cmd {
+	return func() tea.Msg {
+		entries, err := provider.BuildSearchCache(context.Background(), providers)
+		return CacheLoadedMsg{Entries: entries, Err: err}
+	}
 }
