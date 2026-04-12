@@ -10,11 +10,6 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// ── GlobalSearch ──────────────────────────────────────────────────────────────
-
-// GlobalSearch is a modal search overlay (opened with Ctrl+K from any screen)
-// that lets the user filter and navigate to accounts and domains across all
-// providers. The entry list is populated from the startup search cache.
 type GlobalSearch struct {
 	entries   []provider.SearchEntry
 	input     textinput.Model
@@ -22,7 +17,6 @@ type GlobalSearch struct {
 	lastQuery string
 }
 
-// NewGlobalSearch creates the global search modal with pre-cached entries.
 func NewGlobalSearch(entries []provider.SearchEntry) *GlobalSearch {
 	ti := textinput.New()
 	ti.Placeholder = "Search accounts and domains…"
@@ -120,8 +114,6 @@ func (m *GlobalSearch) View() string {
 	return sb.String()
 }
 
-// filtered returns entries whose label contains the query string.
-// When query is empty the full entry list is returned.
 func (m *GlobalSearch) filtered(query string) []provider.SearchEntry {
 	if query == "" {
 		return m.entries
@@ -135,8 +127,6 @@ func (m *GlobalSearch) filtered(query string) []provider.SearchEntry {
 	return out
 }
 
-// navigate returns the tea.Cmd that pushes the appropriate view for the selected entry:
-// account entries open the ZoneList; domain entries open the RecordList.
 func navigate(e provider.SearchEntry) tea.Cmd {
 	switch e.Kind {
 	case provider.SearchEntryKindAccount:

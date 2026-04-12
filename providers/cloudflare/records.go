@@ -10,8 +10,6 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// ListAccounts returns all Cloudflare accounts accessible with the configured credentials.
-// Note: requires an API token with Account.Read permission (or a Global API Key).
 func (p *cfProvider) ListAccounts(ctx context.Context) ([]provider.Account, error) {
 	cfAccounts, err := getAllPages[cfAccount](ctx, p, "/accounts")
 	if err != nil {
@@ -28,8 +26,6 @@ func (p *cfProvider) ListAccounts(ctx context.Context) ([]provider.Account, erro
 	return accounts, nil
 }
 
-// ListZones returns all zones for the given accountID.
-// Pass an empty accountID to list zones across all accessible accounts.
 func (p *cfProvider) ListZones(ctx context.Context, accountID string) ([]provider.Zone, error) {
 	path := "/zones"
 	if accountID != "" {
@@ -52,7 +48,6 @@ func (p *cfProvider) ListZones(ctx context.Context, accountID string) ([]provide
 	return zones, nil
 }
 
-// ListRecords returns all DNS records for the given zone.
 func (p *cfProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.Record, error) {
 	path := "/zones/" + url.PathEscape(zoneID) + "/dns_records"
 
@@ -68,7 +63,6 @@ func (p *cfProvider) ListRecords(ctx context.Context, zoneID string) ([]provider
 	return records, nil
 }
 
-// CreateRecord creates a new DNS record in the given zone and returns the created record.
 func (p *cfProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
 	req := toRequest(r)
 	path := "/zones/" + url.PathEscape(zoneID) + "/dns_records"
@@ -80,7 +74,6 @@ func (p *cfProvider) CreateRecord(ctx context.Context, zoneID string, r provider
 	return toRecord(created), nil
 }
 
-// UpdateRecord replaces the record identified by recordID with the provided data.
 func (p *cfProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, r provider.Record) (provider.Record, error) {
 	req := toRequest(r)
 	path := "/zones/" + url.PathEscape(zoneID) + "/dns_records/" + url.PathEscape(recordID)
@@ -92,7 +85,6 @@ func (p *cfProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, 
 	return toRecord(updated), nil
 }
 
-// DeleteRecord removes the DNS record identified by recordID from the given zone.
 func (p *cfProvider) DeleteRecord(ctx context.Context, zoneID, recordID string) error {
 	path := "/zones/" + url.PathEscape(zoneID) + "/dns_records/" + url.PathEscape(recordID)
 

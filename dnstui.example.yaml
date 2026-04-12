@@ -9,6 +9,9 @@ cache:
   disk_cache: true   # persist cache to $XDG_CACHE_HOME/dnstui/ between sessions
 
 providers:
+  - name: Demo
+    type: demo
+    settings: {}
   # --- Cloudflare example ---
   - name: "CF Personal"
     type: cloudflare

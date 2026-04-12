@@ -6,8 +6,6 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// parseCFDataIntoRecord extracts individual fields from a CF "data" blob into
-// the canonical Extra keys used by the form sub-field system.
 func parseCFDataIntoRecord(rec *provider.Record, recType string, data json.RawMessage) {
 	var blob map[string]any
 	if err := json.Unmarshal(data, &blob); err != nil {
@@ -64,9 +62,6 @@ func parseCFDataIntoRecord(rec *provider.Record, recType string, data json.RawMe
 	}
 }
 
-// buildCFDataFromExtra constructs the CF "data" JSON object from the individual
-// Extra fields populated by the form sub-field system.  Returns nil if the type
-// is not a structured one.
 func buildCFDataFromExtra(r provider.Record) json.RawMessage {
 	var blob map[string]any
 	switch r.Type {
@@ -131,8 +126,6 @@ func extraStr(r provider.Record, key string) string {
 	return ""
 }
 
-// recordTypesWithData lists CF record types whose primary value lives in the
-// "data" object rather than the "content" string field.
 var recordTypesWithData = map[string]bool{
 	"SRV":    true,
 	"CAA":    true,
@@ -145,7 +138,6 @@ var recordTypesWithData = map[string]bool{
 	"URI":    true,
 }
 
-// recordTypesWithPriority lists CF record types that carry a priority field.
 var recordTypesWithPriority = map[string]bool{
 	"MX":    true,
 	"SRV":   true,
@@ -153,7 +145,6 @@ var recordTypesWithPriority = map[string]bool{
 	"URI":   true,
 }
 
-// toRecord converts a Cloudflare API record into the canonical provider.Record.
 func toRecord(r cfRecord) provider.Record {
 	rec := provider.Record{
 		ID:        r.ID,
@@ -200,7 +191,6 @@ func toRecord(r cfRecord) provider.Record {
 	return rec
 }
 
-// toRequest converts a canonical provider.Record into the CF create/update payload.
 func toRequest(r provider.Record) cfRecordRequest {
 	req := cfRecordRequest{
 		Type:    string(r.Type),

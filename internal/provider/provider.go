@@ -2,8 +2,6 @@ package provider
 
 import "context"
 
-// Provider is the interface that every DNS provider implementation must satisfy.
-// All methods that return lists must return an empty slice (not nil) on success with no items.
 type Provider interface {
 	// ProviderName returns a stable lowercase identifier for the implementation
 	// (e.g. "cloudflare", "technitium").  This matches the "type" field in config.

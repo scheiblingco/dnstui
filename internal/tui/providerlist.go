@@ -13,9 +13,6 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// ── ProviderList ─────────────────────────────────────────────────────────────
-
-// providerItem wraps a provider.Provider for the bubbles/list component.
 type providerItem struct {
 	p provider.Provider
 }
@@ -24,7 +21,6 @@ func (i providerItem) Title() string       { return i.p.FriendlyName() }
 func (i providerItem) Description() string { return i.p.ProviderName() }
 func (i providerItem) FilterValue() string { return i.p.FriendlyName() }
 
-// ProviderList is the root view showing all configured provider accounts.
 type ProviderList struct {
 	providers []provider.Provider
 	list      list.Model
@@ -32,7 +28,6 @@ type ProviderList struct {
 	spinner   spinner.Model
 }
 
-// NewProviderList creates the initial provider-selection view.
 func NewProviderList(providers []provider.Provider) *ProviderList {
 	items := make([]list.Item, len(providers))
 	for i, p := range providers {
@@ -124,12 +119,11 @@ func (m *ProviderList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *ProviderList) View() string {
 	if m.loading {
-		return m.list.View() + "\n" + m.spinner.View() + " Loading accounts…"
+		return renderLogo() + "\n\n" + m.list.View() + "\n" + m.spinner.View() + " Loading accounts…"
 	}
-	return m.list.View() + "\n" + styleHelp.Render("enter: select  /: filter  q: quit")
+	return renderLogo() + "\n\n" + m.list.View() + "\n" + styleHelp.Render("enter: select  /: filter  ctrl+k: search  q: quit")
 }
 
-// loadAccounts fetches accounts from a provider asynchronously.
 func loadAccounts(p provider.Provider) tea.Cmd {
 	return func() tea.Msg {
 		accounts, err := p.ListAccounts(context.Background())
@@ -137,23 +131,18 @@ func loadAccounts(p provider.Provider) tea.Cmd {
 	}
 }
 
-// ── AccountList ───────────────────────────────────────────────────────────────
-
 type accountItem struct{ a provider.Account }
 
 func (i accountItem) Title() string       { return i.a.Name }
 func (i accountItem) Description() string { return "id: " + i.a.ID }
 func (i accountItem) FilterValue() string { return i.a.Name }
 
-// AccountList is shown when a provider returns more than one account, letting
-// the user pick which account to browse.
 type AccountList struct {
 	prov     provider.Provider
 	accounts []provider.Account
 	list     list.Model
 }
 
-// NewAccountList creates the account-selection view.
 func NewAccountList(p provider.Provider, accounts []provider.Account) *AccountList {
 	items := make([]list.Item, len(accounts))
 	for i, a := range accounts {
@@ -203,15 +192,12 @@ func (m *AccountList) View() string {
 	return m.list.View() + "\n" + styleHelp.Render("enter: select  /: filter  esc: back  q: quit")
 }
 
-// ── ZoneList ─────────────────────────────────────────────────────────────────
-
 type zoneItem struct{ z provider.Zone }
 
 func (i zoneItem) Title() string       { return i.z.Name }
 func (i zoneItem) Description() string { return "id: " + i.z.ID }
 func (i zoneItem) FilterValue() string { return i.z.Name }
 
-// ZoneList shows zones for the selected provider account.
 type ZoneList struct {
 	prov     provider.Provider
 	accounts []provider.Account
@@ -221,7 +207,6 @@ type ZoneList struct {
 	spinner  spinner.Model
 }
 
-// NewZoneList creates the zone-selection view.
 func NewZoneList(p provider.Provider, accounts []provider.Account) *ZoneList {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -13,8 +14,6 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// ── Record-type selector ──────────────────────────────────────────────────────
-
 var allRecordTypes = []provider.RecordType{
 	provider.RecordTypeA, provider.RecordTypeAAAA, provider.RecordTypeCNAME,
 	provider.RecordTypeMX, provider.RecordTypeTXT, provider.RecordTypeNS,
@@ -22,13 +21,7 @@ var allRecordTypes = []provider.RecordType{
 	provider.RecordTypeTLSA, provider.RecordTypeSSHFP, provider.RecordTypeNAPTR,
 }
 
-// ── Sub-field system ──────────────────────────────────────────────────────────
 //
-// Each record type has an ordered list of subFieldDefs that replace the generic
-// single "Value" input.  The "key" field maps the value to provider.Record:
-//   "value"      → Record.Value
-//   "priority"   → Record.Priority
-//   "extra:NAME" → Record.Extra["NAME"] (int or string based on kind)
 
 type subFieldDef struct {
 	key         string // "value" | "priority" | "extra:NAME"
@@ -43,8 +36,6 @@ type subFieldInst struct {
 	input textinput.Model
 }
 
-// typeSubFields defines structured sub-fields for complex record types.
-// Types not in this map get a single generic "Value" text field.
 var typeSubFields = map[provider.RecordType][]subFieldDef{
 	provider.RecordTypeMX: {
 		{key: "priority", label: "Priority ", placeholder: "10", kind: "int", required: false},
@@ -82,7 +73,6 @@ var typeSubFields = map[provider.RecordType][]subFieldDef{
 	},
 }
 
-// valuePlaceholderFor returns a type-appropriate placeholder for the generic Value field.
 func valuePlaceholderFor(t provider.RecordType) string {
 	switch t {
 	case provider.RecordTypeA:
@@ -101,8 +91,6 @@ func valuePlaceholderFor(t provider.RecordType) string {
 		return ""
 	}
 }
-
-// ── Provider-specific extras ──────────────────────────────────────────────────
 
 type extraFieldDef struct {
 	key   string // matches provider.Record.Extra key
@@ -125,17 +113,11 @@ type activeExtra struct {
 	input   textinput.Model
 }
 
-// ── Focus constants ───────────────────────────────────────────────────────────
-
 const (
 	focusName = 0
 	focusType = 1
 	focusTTL  = 2
-
-// sub-fields start at 3
 )
-
-// ── RecordForm ────────────────────────────────────────────────────────────────
 
 type RecordForm struct {
 	prov     provider.Provider
@@ -195,8 +177,6 @@ func (m *RecordForm) subFieldsStart() int { return 3 }
 func (m *RecordForm) extrasStart() int    { return 3 + len(m.subFields) }
 func (m *RecordForm) totalFields() int    { return m.extrasStart() + len(m.extras) }
 
-// rebuildSubFields recreates the ordered sub-fields for the current record type,
-// populating initial values from sourceRec.
 func (m *RecordForm) rebuildSubFields(sourceRec provider.Record) {
 	defs, hasStructured := typeSubFields[m.currentType()]
 	if !hasStructured {
@@ -240,7 +220,6 @@ func (m *RecordForm) rebuildSubFields(sourceRec provider.Record) {
 	m.subFields = fields
 }
 
-// rebuildExtras recreates provider-specific extra fields for the current type.
 func (m *RecordForm) rebuildExtras(sourceRec provider.Record) {
 	defs, ok := providerExtraFields[m.prov.ProviderName()][m.currentType()]
 	if !ok {
@@ -274,7 +253,6 @@ func (m *RecordForm) rebuildExtras(sourceRec provider.Record) {
 	m.extras = newExtras
 }
 
-// focusField updates the focused index and moves text-input focus accordingly.
 func (m *RecordForm) focusField(idx int) {
 	m.nameInput.Blur()
 	m.ttlInput.Blur()
@@ -420,6 +398,59 @@ func (m *RecordForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func validateRecordValue(t provider.RecordType, value string) string {
+	switch t {
+	case provider.RecordTypeA:
+		ip := net.ParseIP(value)
+		if ip == nil || ip.To4() == nil {
+			return "Value must be a valid IPv4 address (e.g. 1.2.3.4)"
+		}
+	case provider.RecordTypeAAAA:
+		ip := net.ParseIP(value)
+		if ip == nil || ip.To4() != nil {
+			return "Value must be a valid IPv6 address (e.g. 2001:db8::1)"
+		}
+	case provider.RecordTypeCNAME, provider.RecordTypeNS, provider.RecordTypePTR:
+		if !isValidHostname(value) {
+			return strings.TrimSpace(string(t)) + " value must be a valid hostname"
+		}
+	case provider.RecordTypeMX:
+		// MX target is validated in the sub-field "value" of the MX type.
+		if !isValidHostname(value) {
+			return "Exchange must be a valid hostname"
+		}
+	}
+	return ""
+}
+
+func isValidHostname(s string) bool {
+	s = strings.TrimSuffix(s, ".")
+	if len(s) == 0 || len(s) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(s, ".") {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+		for i, c := range label {
+			switch {
+			case c >= 'a' && c <= 'z':
+			case c >= 'A' && c <= 'Z':
+			case c >= '0' && c <= '9':
+			case c == '-':
+				if i == 0 || i == len(label)-1 {
+					return false
+				}
+			case c == '_':
+				// Underscores are valid in DNS labels (SRV, DKIM, etc.)
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (m *RecordForm) submit() (tea.Model, tea.Cmd) {
 	rec, valErr := m.buildRecord()
 	if valErr != "" {
@@ -480,6 +511,10 @@ func (m *RecordForm) buildRecord() (provider.Record, string) {
 		switch sf.def.key {
 		case "value":
 			rec.Value = raw
+			// Type-specific format validation.
+			if err := validateRecordValue(rec.Type, raw); err != "" {
+				return provider.Record{}, err
+			}
 		case "priority":
 			n, err := strconv.Atoi(raw)
 			if err != nil || n < 0 {
@@ -516,8 +551,6 @@ func (m *RecordForm) buildRecord() (provider.Record, string) {
 
 	return rec, ""
 }
-
-// ── Rendering ─────────────────────────────────────────────────────────────────
 
 var (
 	styleLabelActive = lipgloss.NewStyle().Foreground(colorSelected).Bold(true)

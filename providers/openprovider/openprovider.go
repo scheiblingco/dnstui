@@ -1,13 +1,3 @@
-// Package openprovider implements the Openprovider DNS provider for dnstui.
-//
-// Authentication uses Bearer tokens obtained by POSTing username+password to
-// /v1beta/auth/login, or by supplying a pre-generated static API token.
-//
-// Record identity for update/delete is encoded as a JSON string in Record.ID
-// because Openprovider's zone-update API uses value-based matching rather than
-// record IDs.
-//
-// Self-registers as provider type "openprovider" via init().
 package openprovider
 
 import (
@@ -32,10 +22,6 @@ func init() {
 
 const defaultBaseURL = "https://api.openprovider.eu/v1beta"
 
-// Settings holds Openprovider-specific credentials decoded from
-// ProviderConfig.Settings.
-//
-// Either (Username + Password) or Token must be provided.
 type Settings struct {
 	// Username for dynamic token login.
 	Username string `mapstructure:"username"`
@@ -64,7 +50,6 @@ func trimDomain(name, zone string) string {
 	return xname
 }
 
-// New constructs an Openprovider provider from a ProviderConfig.
 func New(cfg config.ProviderConfig) (provider.Provider, error) {
 	var s Settings
 	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
@@ -106,8 +91,6 @@ func New(cfg config.ProviderConfig) (provider.Provider, error) {
 func (p *opProvider) ProviderName() string { return "openprovider" }
 func (p *opProvider) FriendlyName() string { return p.name }
 
-// ── Authentication ─────────────────────────────────────────────────────────────
-
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -145,10 +128,6 @@ func (p *opProvider) login(ctx context.Context) error {
 	return nil
 }
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
-
-// apiRequest executes an HTTP request and returns the unwrapped .data field.
-// If authed is true the Bearer token header is added.
 func (p *opProvider) apiRequest(ctx context.Context, method, path string, reqBody any, authed bool) ([]byte, error) {
 	var bodyReader io.Reader
 	if reqBody != nil {
@@ -206,10 +185,6 @@ func (p *opProvider) putJSON(ctx context.Context, path string, body any) ([]byte
 	return p.apiRequest(ctx, http.MethodPut, path, body, true)
 }
 
-// ── ListAccounts ──────────────────────────────────────────────────────────────
-
-// ListAccounts returns a single synthetic account representing the
-// authenticated Openprovider reseller.
 func (p *opProvider) ListAccounts(ctx context.Context) ([]provider.Account, error) {
 	accountName := p.settings.Username
 	if accountName == "" {
@@ -224,8 +199,6 @@ func (p *opProvider) ListAccounts(ctx context.Context) ([]provider.Account, erro
 	}, nil
 }
 
-// ── ListZones ─────────────────────────────────────────────────────────────────
-
 type opZone struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
@@ -236,8 +209,6 @@ type opZoneListData struct {
 	Total   int      `json:"total"`
 }
 
-// ListZones returns all DNS zones for the authenticated reseller.
-// The accountID parameter is ignored (Openprovider uses the Bearer token).
 func (p *opProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone, error) {
 	const limit = 500
 	var zones []provider.Zone
@@ -266,9 +237,6 @@ func (p *opProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone, 
 	return zones, nil
 }
 
-// ── ListRecords ───────────────────────────────────────────────────────────────
-
-// opRecord is a DNS record as returned by GET /dns/zones/{name}/records.
 type opRecord struct {
 	Name  string `json:"name"`
 	TTL   int    `json:"ttl"`
@@ -282,7 +250,6 @@ type opRecordListData struct {
 	Total   int        `json:"total"`
 }
 
-// ListRecords returns all DNS records for the given zone name.
 func (p *opProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.Record, error) {
 	const limit = 500
 	var records []provider.Record
@@ -307,9 +274,6 @@ func (p *opProvider) ListRecords(ctx context.Context, zoneID string) ([]provider
 	return records, nil
 }
 
-// opRecordToProvider converts an opRecord to a provider.Record.  The ID is
-// a JSON-encoded snapshot of the record used to identify it in later
-// update/delete operations.
 func opRecordToProvider(r opRecord, zoneID string) provider.Record {
 	id, _ := json.Marshal(r)
 	return provider.Record{
@@ -324,7 +288,6 @@ func opRecordToProvider(r opRecord, zoneID string) provider.Record {
 	}
 }
 
-// providerToOpRecord converts a provider.Record to an opRecord for the API.
 func providerToOpRecord(r provider.Record, zoneID string) opRecord {
 	nname := r.Name
 	if nname != zoneID {
@@ -339,9 +302,6 @@ func providerToOpRecord(r provider.Record, zoneID string) opRecord {
 	}
 }
 
-// ── CreateRecord ──────────────────────────────────────────────────────────────
-
-// CreateRecord adds a new DNS record to the given zone.
 func (p *opProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
 	newRec := providerToOpRecord(r, zoneID)
 
@@ -365,10 +325,6 @@ func (p *opProvider) CreateRecord(ctx context.Context, zoneID string, r provider
 	return r, nil
 }
 
-// ── UpdateRecord ──────────────────────────────────────────────────────────────
-
-// UpdateRecord replaces an existing record.  recordID must be the JSON-encoded
-// opRecord snapshot produced by ListRecords or CreateRecord.
 func (p *opProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, r provider.Record) (provider.Record, error) {
 	var original opRecord
 	if err := json.Unmarshal([]byte(recordID), &original); err != nil {
@@ -413,10 +369,6 @@ func (p *opProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, 
 	return r, nil
 }
 
-// ── DeleteRecord ──────────────────────────────────────────────────────────────
-
-// DeleteRecord removes the record identified by recordID (a JSON-encoded
-// opRecord snapshot) from the given zone.
 func (p *opProvider) DeleteRecord(ctx context.Context, zoneID, recordID string) error {
 	var rec opRecord
 	if err := json.Unmarshal([]byte(recordID), &rec); err != nil {

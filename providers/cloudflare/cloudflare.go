@@ -1,10 +1,3 @@
-// Package cloudflare implements the Cloudflare DNS provider for dnstui.
-//
-// Authentication supports two methods (in order of preference):
-//   - API Token (recommended): set settings.api_token
-//   - Global API Key (legacy): set settings.api_key + settings.api_email
-//
-// Self-registers as provider type "cloudflare" via init().
 package cloudflare
 
 import (
@@ -20,8 +13,6 @@ import (
 
 const defaultAPIBase = "https://api.cloudflare.com/client/v4"
 
-// Settings holds Cloudflare-specific provider credentials decoded from
-// ProviderConfig.Settings.
 type Settings struct {
 	// APIToken is a scoped Cloudflare API token (preferred auth method).
 	APIToken string `mapstructure:"api_token"`
@@ -33,7 +24,6 @@ type Settings struct {
 	BaseURL string `mapstructure:"base_url"`
 }
 
-// cfProvider implements provider.Provider for Cloudflare.
 type cfProvider struct {
 	name     string
 	settings Settings
@@ -44,7 +34,6 @@ func init() {
 	provider.Register("cloudflare", New)
 }
 
-// New constructs a Cloudflare provider from a ProviderConfig.
 func New(cfg config.ProviderConfig) (provider.Provider, error) {
 	var s Settings
 	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{

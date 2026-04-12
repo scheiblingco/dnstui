@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// cfResponse is the standard Cloudflare API envelope.
 type cfResponse[T any] struct {
 	Success    bool          `json:"success"`
 	Errors     []cfAPIError  `json:"errors"`
@@ -15,13 +14,11 @@ type cfResponse[T any] struct {
 	ResultInfo *cfResultInfo `json:"result_info,omitempty"`
 }
 
-// cfAPIError is a single error entry returned by the Cloudflare API.
 type cfAPIError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
-// cfResultInfo contains pagination metadata.
 type cfResultInfo struct {
 	Page       int `json:"page"`
 	PerPage    int `json:"per_page"`
@@ -30,26 +27,22 @@ type cfResultInfo struct {
 	TotalCount int `json:"total_count"`
 }
 
-// cfAccount represents a Cloudflare account.
 type cfAccount struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-// cfZoneAccount is the embedded account object within a zone.
 type cfZoneAccount struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-// cfZone represents a Cloudflare zone (domain).
 type cfZone struct {
 	ID      string        `json:"id"`
 	Name    string        `json:"name"`
 	Account cfZoneAccount `json:"account"`
 }
 
-// cfRecord represents a Cloudflare DNS record as returned by the API.
 type cfRecord struct {
 	ID         string          `json:"id"`
 	ZoneID     string          `json:"zone_id"`
@@ -66,7 +59,6 @@ type cfRecord struct {
 	ModifiedOn time.Time       `json:"modified_on"`
 }
 
-// cfRecordRequest is the payload used for create (POST) and replace (PUT) operations.
 type cfRecordRequest struct {
 	Type     string          `json:"type"`
 	Name     string          `json:"name"`
@@ -78,7 +70,6 @@ type cfRecordRequest struct {
 	Comment  string          `json:"comment,omitempty"`
 }
 
-// apiErrors converts a slice of cfAPIError into a single Go error.
 func apiErrors(errs []cfAPIError) error {
 	if len(errs) == 0 {
 		return fmt.Errorf("unknown API error")

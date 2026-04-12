@@ -1,9 +1,7 @@
-// Package provider defines the common types and interfaces shared by all DNS provider implementations.
 package provider
 
 import "time"
 
-// RecordType represents a DNS record type.
 type RecordType string
 
 const (
@@ -22,7 +20,6 @@ const (
 	RecordTypeNAPTR RecordType = "NAPTR"
 )
 
-// Account represents a top-level account or login within a provider.
 type Account struct {
 	// ID is the provider-internal account identifier.
 	ID string
@@ -31,7 +28,6 @@ type Account struct {
 	Name string
 }
 
-// Zone represents a DNS zone (domain) within an account.
 type Zone struct {
 	// ID is the provider-internal zone identifier.
 	ID string
@@ -43,7 +39,6 @@ type Zone struct {
 	AccountID string
 }
 
-// Record represents a single DNS resource record.
 type Record struct {
 	// ID is the provider-internal record identifier.
 	ID string

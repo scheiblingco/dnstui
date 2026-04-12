@@ -6,19 +6,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// ── ConfirmDialog ─────────────────────────────────────────────────────────────
-
-// ConfirmDialog is a modal overlay for destructive actions.
-// It executes confirmCmd when the user presses y/Y/enter, and discards cleanly
-// on n/N/esc.
 type ConfirmDialog struct {
 	message    string
 	confirmCmd tea.Cmd
 	selected   bool // true = yes, false = no
 }
 
-// NewConfirmDialog creates a confirm/cancel dialog.
-// confirmCmd is the tea.Cmd that should run on confirmation.
 func NewConfirmDialog(message string, confirmCmd tea.Cmd) *ConfirmDialog {
 	return &ConfirmDialog{
 		message:    message,

@@ -14,17 +14,12 @@ import (
 	tpkg "github.com/scheiblingco/dnstui/providers/technitium"
 )
 
-// --- helpers ----------------------------------------------------------------
-
 func newTestProvider(t *testing.T, serverURL string) provider.Provider {
 	t.Helper()
 	p, err := tpkg.New(config.ProviderConfig{
-		Name: "test",
-		Type: "technitium",
-		Settings: map[string]any{
-
-
-		},
+		Name:     "test",
+		Type:     "technitium",
+		Settings: map[string]any{},
 	})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
@@ -53,7 +48,6 @@ func TestFullConnection(t *testing.T) {
 		Name: "test",
 		Type: "technitium",
 		Settings: map[string]any{
-
 
 			"ignore_tls": true,
 		},
@@ -85,13 +79,10 @@ func TestFullConnection(t *testing.T) {
 	fmt.Println(mk)
 }
 
-// --- New() validation -------------------------------------------------------
-
 func TestNew_MissingBaseURL(t *testing.T) {
 	_, err := tpkg.New(config.ProviderConfig{
-		Name:     "bad",
-		Type:     "technitium",
-
+		Name: "bad",
+		Type: "technitium",
 	})
 	if err == nil {
 
@@ -100,16 +91,13 @@ func TestNew_MissingBaseURL(t *testing.T) {
 
 func TestNew_MissingAPIKey(t *testing.T) {
 	_, err := tpkg.New(config.ProviderConfig{
-		Name:     "bad",
-		Type:     "technitium",
-
+		Name: "bad",
+		Type: "technitium",
 	})
 	if err == nil {
 
 	}
 }
-
-// --- ListAccounts -----------------------------------------------------------
 
 func TestListAccounts(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,8 +134,6 @@ func TestListAccounts_Error(t *testing.T) {
 	}
 }
 
-// --- ListZones --------------------------------------------------------------
-
 func TestListZones(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/zones/list" {
@@ -175,8 +161,6 @@ func TestListZones(t *testing.T) {
 		t.Errorf("unexpected zone name: %s", zones[0].Name)
 	}
 }
-
-// --- ListRecords ------------------------------------------------------------
 
 func TestListRecords(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,8 +223,6 @@ func TestListRecords(t *testing.T) {
 	}
 }
 
-// --- CreateRecord -----------------------------------------------------------
-
 func TestCreateRecord(t *testing.T) {
 	var calledPath string
 	var calledQuery url.Values
@@ -282,8 +264,6 @@ func TestCreateRecord(t *testing.T) {
 	}
 }
 
-// --- DeleteRecord -----------------------------------------------------------
-
 func TestDeleteRecord(t *testing.T) {
 	var calledPath string
 
@@ -311,8 +291,6 @@ func TestDeleteRecord_InvalidID(t *testing.T) {
 		t.Error("expected error for invalid recordID")
 	}
 }
-
-// --- ProviderIdentity -------------------------------------------------------
 
 func TestProviderIdentity(t *testing.T) {
 	p := newTestProvider(t, "http://localhost")

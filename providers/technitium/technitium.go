@@ -1,9 +1,3 @@
-// Package technitium implements the Technitium DNS Server provider for dnstui.
-//
-// Authentication uses an API token passed as a query parameter (?token=…).
-// Multiple server connections are supported via separate ProviderConfig entries.
-//
-// Self-registers as provider type "technitium" via init().
 package technitium
 
 import (
@@ -24,7 +18,6 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// Settings holds Technitium-specific credentials decoded from ProviderConfig.Settings.
 type Settings struct {
 	// BaseURL is the root URL of the Technitium DNS server API (e.g. "http://192.168.1.1:5380").
 	BaseURL string `mapstructure:"base_url"`
@@ -34,7 +27,6 @@ type Settings struct {
 	IgnoreTLS bool `mapstructure:"ignore_tls"`
 }
 
-// tProvider implements provider.Provider for Technitium DNS server.
 type tProvider struct {
 	name     string
 	settings Settings
@@ -45,7 +37,6 @@ func init() {
 	provider.Register("technitium", New)
 }
 
-// New constructs a Technitium provider from a ProviderConfig.
 func New(cfg config.ProviderConfig) (provider.Provider, error) {
 	var s Settings
 	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
@@ -85,9 +76,6 @@ func New(cfg config.ProviderConfig) (provider.Provider, error) {
 func (p *tProvider) ProviderName() string { return "technitium" }
 func (p *tProvider) FriendlyName() string { return p.name }
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────────
-
-// apiURL builds the full URL for a Technitium API path with the auth token appended.
 func (p *tProvider) apiURL(path string, params url.Values) string {
 	if params == nil {
 		params = url.Values{}
@@ -96,19 +84,16 @@ func (p *tProvider) apiURL(path string, params url.Values) string {
 	return p.settings.BaseURL + "/api/" + path + "?" + params.Encode()
 }
 
-// tResponse is the standard Technitium API response envelope.
 type tResponse[T any] struct {
 	Status   string `json:"status"`  // "ok" or "error"
 	Message  string `json:"message"` // error message when status == "error"
 	Response T      `json:"response"`
 }
 
-// doGET performs a GET against the Technitium API with retry on 5xx.
 func (p *tProvider) doGET(ctx context.Context, apiPath string, params url.Values) ([]byte, error) {
 	return p.doRequest(ctx, http.MethodGet, apiPath, params, nil)
 }
 
-// doPOST performs a POST with a JSON body.
 func (p *tProvider) doPOST(ctx context.Context, apiPath string, params url.Values, body any) ([]byte, error) {
 	return p.doRequest(ctx, http.MethodPost, apiPath, params, body)
 }
@@ -170,7 +155,6 @@ func (p *tProvider) doRequest(ctx context.Context, method, apiPath string, param
 	return nil, lastErr
 }
 
-// decodeResponse unmarshals the Technitium envelope and returns error if status != "ok".
 func decodeResponse[T any](raw []byte, apiPath string) (T, error) {
 	var env tResponse[T]
 	if err := json.Unmarshal(raw, &env); err != nil {
@@ -184,16 +168,10 @@ func decodeResponse[T any](raw []byte, apiPath string) (T, error) {
 	return env.Response, nil
 }
 
-// ── Provider interface ────────────────────────────────────────────────────────
-
-// tAccountResponse is the outer response wrapper for user/session calls.
-// Technitium doesn't have a true "accounts" concept — we synthesise a single
-// account from the server's own session info (username + server URL).
 type tSessionInfo struct {
 	Username string `json:"username"`
 }
 
-// ListAccounts returns a single synthetic account representing this Technitium server.
 func (p *tProvider) ListAccounts(ctx context.Context) ([]provider.Account, error) {
 	raw, err := p.doGET(ctx, "user/session/get", nil)
 	if err != nil {
@@ -208,7 +186,6 @@ func (p *tProvider) ListAccounts(ctx context.Context) ([]provider.Account, error
 	}, nil
 }
 
-// tZonesResponse wraps the zone list from Technitium.
 type tZonesResponse struct {
 	Zones []tZone `json:"zones"`
 }
@@ -219,8 +196,6 @@ type tZone struct {
 	Disabled bool   `json:"disabled"`
 }
 
-// ListZones returns all primary/secondary zones from the Technitium server.
-// accountID is ignored (Technitium has no sub-account concept).
 func (p *tProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone, error) {
 	raw, err := p.doGET(ctx, "zones/list", nil)
 	if err != nil {
@@ -242,7 +217,6 @@ func (p *tProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone, e
 	return zones, nil
 }
 
-// tRecordsResponse wraps the record list from Technitium.
 type tRecordsResponse struct {
 	Zone    tZoneInfo `json:"zone"`
 	Records []tRecord `json:"records"`
@@ -261,10 +235,6 @@ type tRecord struct {
 	RDATA    tRDATA `json:"rData"`
 }
 
-// tRDATA contains all possible record-type specific fields.
-// Technitium uses a flat rData object with type-dependent fields present.
-// Note: "flags" is an int for CAA and a string for NAPTR; we use `any` to
-// accept both without a JSON decode error.
 type tRDATA struct {
 	// A / AAAA
 	IPAddress string `json:"ipAddress"`
@@ -302,7 +272,6 @@ type tRDATA struct {
 	Replacement string `json:"replacement"`
 }
 
-// ListRecords returns all records in the given zone (by zone name).
 func (p *tProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.Record, error) {
 	params := url.Values{"zone": {zoneID}, "domain": {zoneID}, "listZone": {"true"}}
 	raw, err := p.doGET(ctx, "zones/records/get", params)
@@ -321,7 +290,6 @@ func (p *tProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.
 	return records, nil
 }
 
-// CreateRecord adds a new record via Technitium's zones/records/add endpoint.
 func (p *tProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
 	params := sharedToTechParams(zoneID, r, nil)
 	raw, err := p.doGET(ctx, "zones/records/add", params)
@@ -336,8 +304,6 @@ func (p *tProvider) CreateRecord(ctx context.Context, zoneID string, r provider.
 	return findOrFallback(resp.Records, zoneID, r), nil
 }
 
-// UpdateRecord modifies an existing record.
-// Technitium identifies the "old" record by its current fields and replaces it.
 func (p *tProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, r provider.Record) (provider.Record, error) {
 	// recordID encodes "name/type/oldValue" — see tRecordToShared.
 	parts := strings.SplitN(recordID, "\x00", 3)
@@ -391,7 +357,6 @@ func (p *tProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, r
 	return findOrFallback(resp.Records, zoneID, r), nil
 }
 
-// DeleteRecord removes a record. recordID encodes "name\x00type\x00value".
 func (p *tProvider) DeleteRecord(ctx context.Context, zoneID, recordID string) error {
 	parts := strings.SplitN(recordID, "\x00", 3)
 	if len(parts) != 3 {
@@ -412,10 +377,6 @@ func (p *tProvider) DeleteRecord(ctx context.Context, zoneID, recordID string) e
 	return err
 }
 
-// ── Type mapping ─────────────────────────────────────────────────────────────
-
-// tRecordToShared converts a Technitium record to the canonical provider.Record.
-// The ID is a composite "name\x00type\x00primaryValue" that allows round-trip updates.
 func tRecordToShared(r tRecord, zoneID string) provider.Record {
 	value, priority := tExtractValue(r)
 	rec := provider.Record{
@@ -472,7 +433,6 @@ func tRecordToShared(r tRecord, zoneID string) provider.Record {
 	return rec
 }
 
-// tExtractValue returns the primary value string and priority for a Technitium record.
 func tExtractValue(r tRecord) (string, int) {
 	switch r.Type {
 	case "A", "AAAA":
@@ -502,7 +462,6 @@ func tExtractValue(r tRecord) (string, int) {
 	}
 }
 
-// sharedToTechParams builds the query parameters for add/update calls.
 func sharedToTechParams(zoneID string, r provider.Record, oldRecord *provider.Record) url.Values {
 	domainx := r.Name
 	if domainx == "@" {
@@ -676,7 +635,6 @@ func sharedToTechParams(zoneID string, r provider.Record, oldRecord *provider.Re
 	return params
 }
 
-// toInt coerces a numeric any value (int or float64) to int.
 func toInt(v any) (int, bool) {
 	switch vv := v.(type) {
 	case int:
@@ -687,8 +645,6 @@ func toInt(v any) (int, bool) {
 	return 0, false
 }
 
-// findOrFallback looks for a matching record in the returned list or returns a
-// best-effort reconstruction of what was just written.
 func findOrFallback(records []tRecord, zoneID string, wanted provider.Record) provider.Record {
 	for _, r := range records {
 		if r.Name == wanted.Name && r.Type == string(wanted.Type) {

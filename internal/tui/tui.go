@@ -1,8 +1,5 @@
-// Package tui implements the full terminal UI for dnstui using Bubble Tea.
 //
-// Navigation follows a model-stack pattern: each view pushes onto the stack
-// when the user drills down, and pops when they press Esc. The root model
-// dispatches messages and rendering to whichever view is on top.
+
 package tui
 
 import (
@@ -16,7 +13,17 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// ── Shared colours / styles ──────────────────────────────────────────────────
+const logoText = ` ____  _   _ ____ _____ _   _ ___ 
+|  _ \| \ | / ___|_   _| | | |_ _|
+| | | |  \| \___ \ | | | | | || | 
+| |_| | |\  |___) || | | |_| || | 
+|____/|_| \_|____/ |_|  \___/|___|`
+
+const logoHeight = 6 // 5 art lines + 1 blank
+
+var styleLogo = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+
+func renderLogo() string { return styleLogo.Render(logoText) }
 
 var (
 	colorPrimary  = lipgloss.Color("63")  // medium slate blue
@@ -59,62 +66,44 @@ var (
 			Bold(true)
 )
 
-// ── Messages ─────────────────────────────────────────────────────────────────
-
-// PopMsg signals the current view should be removed and control returned to the
-// view beneath it. FollowUp, if non-nil, is dispatched to the new top view
-// immediately after the pop (used to deliver results to the parent view).
 type PopMsg struct{ FollowUp tea.Cmd }
 
-// PushMsg signals that a new view model should be pushed on top of the stack.
 type PushMsg struct{ Model tea.Model }
 
-// ErrorMsg carries an error to be displayed in the status bar.
 type ErrorMsg struct{ Err error }
 
-// StatusMsg carries a transient success message.
 type StatusMsg struct{ Text string }
 
-// AccountsLoadedMsg delivers ListAccounts results.
 type AccountsLoadedMsg struct {
 	ProviderIdx int
 	Accounts    []provider.Account
 	Err         error
 }
 
-// ZonesLoadedMsg delivers ListZones results.
 type ZonesLoadedMsg struct {
 	AccountID string
 	Zones     []provider.Zone
 	Err       error
 }
 
-// RecordsLoadedMsg delivers ListRecords results.
 type RecordsLoadedMsg struct {
 	ZoneID  string
 	Records []provider.Record
 	Err     error
 }
 
-// RecordSavedMsg signals a create or update completed.
 type RecordSavedMsg struct {
 	Record provider.Record
 	Err    error
 }
 
-// RecordDeletedMsg signals a delete completed.
 type RecordDeletedMsg struct{ Err error }
 
-// CacheLoadedMsg delivers the result of the startup search-cache background load.
 type CacheLoadedMsg struct {
 	Entries []provider.SearchEntry
 	Err     error
 }
 
-// ── Root model ────────────────────────────────────────────────────────────────
-
-// Model is the root Bubble Tea model. It owns the view stack and a shared
-// status/error line across the bottom.
 type Model struct {
 	stack         []tea.Model
 	statusText    string
@@ -125,7 +114,6 @@ type Model struct {
 	searchEntries []provider.SearchEntry
 }
 
-// New creates the root TUI model with the provider list as the initial view.
 func New(providers []provider.Provider) Model {
 	m := Model{providers: providers}
 	m.push(NewProviderList(providers))
@@ -146,8 +134,6 @@ func (m Model) top() tea.Model {
 	return m.stack[len(m.stack)-1]
 }
 
-// Init initialises the top view and triggers the background search-cache build
-// (if the cache has not already been populated, e.g. by RunWithSearch).
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.top().Init()}
 	if len(m.searchEntries) == 0 && len(m.providers) > 0 {
@@ -156,7 +142,6 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Update handles messages and delegates to the top view.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -243,7 +228,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// View renders the top view plus the shared status bar.
 func (m Model) View() string {
 	content := m.top().View()
 
@@ -260,9 +244,6 @@ func (m Model) View() string {
 	return content + "\n" + statusLine
 }
 
-// wrapText inserts newlines into s so that no line exceeds width printable
-// columns. Words are kept intact; breaking only happens at whitespace. If
-// width is 0 (not yet known) s is returned unchanged.
 func wrapText(s string, width int) string {
 	if width <= 0 {
 		return s
@@ -291,7 +272,6 @@ func wrapText(s string, width int) string {
 	return sb.String()
 }
 
-// Run starts the Bubble Tea program with the given providers.
 func Run(providers []provider.Provider) error {
 	m := New(providers)
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -299,9 +279,6 @@ func Run(providers []provider.Provider) error {
 	return err
 }
 
-// RunWithSearch starts the TUI with the GlobalSearch view as the first screen.
-// The search cache is built synchronously before the program starts so the
-// list is immediately available when the modal opens.
 func RunWithSearch(providers []provider.Provider) error {
 	entries, err := provider.BuildSearchCache(context.Background(), providers)
 	if err != nil {
@@ -314,8 +291,6 @@ func RunWithSearch(providers []provider.Provider) error {
 	return err
 }
 
-// buildSearchCache is the tea.Cmd that populates the root model's search cache
-// in the background during normal TUI operation.
 func buildSearchCache(providers []provider.Provider) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := provider.BuildSearchCache(context.Background(), providers)

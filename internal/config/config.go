@@ -7,10 +7,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config is the top-level application configuration.
 type Config struct {
 	// LogLevel controls verbosity: debug, info, warn, error.
 	LogLevel string `mapstructure:"log_level" yaml:"log_level"`
+
+	// LogFile is the path where log output is written. If empty, logging is
+	// silenced. Useful when log_level is "debug" to avoid corrupting the TUI.
+	// Example: /tmp/dnstui.log
+	LogFile string `mapstructure:"log_file" yaml:"log_file"`
 
 	// Providers is the ordered list of configured DNS provider accounts.
 	Providers []ProviderConfig `mapstructure:"providers" yaml:"providers"`
@@ -19,7 +23,6 @@ type Config struct {
 	Cache CacheConfig `mapstructure:"cache" yaml:"cache"`
 }
 
-// ProviderConfig holds the identity and credentials for a single provider account.
 type ProviderConfig struct {
 	// Name is a human-readable alias shown in the TUI (e.g. "CF Personal").
 	Name string `mapstructure:"name" yaml:"name"`
@@ -32,7 +35,6 @@ type ProviderConfig struct {
 	Settings map[string]any `mapstructure:"settings" yaml:"settings"`
 }
 
-// CacheConfig controls the in-memory and on-disk cache behaviour.
 type CacheConfig struct {
 	// TTLSeconds is how long (in seconds) cached lists are considered fresh.
 	// Default: 300 (5 minutes).
@@ -42,7 +44,6 @@ type CacheConfig struct {
 	DiskCache bool `mapstructure:"disk_cache" yaml:"disk_cache"`
 }
 
-// DefaultConfig returns a Config with sane defaults.
 func DefaultConfig() Config {
 	return Config{
 		LogLevel: "info",
@@ -53,15 +54,11 @@ func DefaultConfig() Config {
 	}
 }
 
-// Load reads configuration from (in order of increasing precedence):
-//  1. Built-in defaults
-//  2. Config file (path provided by caller, empty = auto-discover)
-//  3. DNSTUI_ prefixed environment variables
-//  4. Explicit overrides set on v before calling Load (e.g. from CLI flags)
 func Load(v *viper.Viper, cfgFile string) (*Config, error) {
 	// Apply defaults.
 	def := DefaultConfig()
 	v.SetDefault("log_level", def.LogLevel)
+	v.SetDefault("log_file", def.LogFile)
 	v.SetDefault("cache.ttl_seconds", def.Cache.TTLSeconds)
 	v.SetDefault("cache.disk_cache", def.Cache.DiskCache)
 
@@ -100,7 +97,6 @@ func Load(v *viper.Viper, cfgFile string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Validate checks that the config is internally consistent.
 func (c *Config) Validate() error {
 	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
 	if !validLevels[strings.ToLower(c.LogLevel)] {

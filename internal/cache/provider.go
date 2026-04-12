@@ -6,17 +6,11 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// cachedProvider wraps a provider.Provider and transparently caches the results
-// of ListAccounts and ListZones using the shared Cache.  All other methods are
-// passed through to the inner provider unchanged.
 type cachedProvider struct {
 	inner provider.Provider
 	cache *Cache
 }
 
-// Wrap returns a provider.Provider whose ListAccounts and ListZones calls are
-// served from the cache (after the first live fetch).  If c is nil, inner is
-// returned unchanged.
 func Wrap(inner provider.Provider, c *Cache) provider.Provider {
 	if c == nil {
 		return inner
@@ -24,7 +18,6 @@ func Wrap(inner provider.Provider, c *Cache) provider.Provider {
 	return &cachedProvider{inner: inner, cache: c}
 }
 
-// WrapAll wraps every provider in the slice. A nil Cache is a no-op.
 func WrapAll(providers []provider.Provider, c *Cache) []provider.Provider {
 	if c == nil {
 		return providers

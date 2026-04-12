@@ -13,9 +13,6 @@ import (
 	cfpkg "github.com/scheiblingco/dnstui/providers/cloudflare"
 )
 
-// --- helpers ----------------------------------------------------------------
-
-// newTestProvider builds a Cloudflare provider pointing at the given test server URL.
 func newTestProvider(t *testing.T, serverURL string) provider.Provider {
 	t.Helper()
 	p, err := cfpkg.New(config.ProviderConfig{
@@ -32,7 +29,6 @@ func newTestProvider(t *testing.T, serverURL string) provider.Provider {
 	return p
 }
 
-// jsonResponse writes a standard CF success envelope to w.
 func jsonResponse(w http.ResponseWriter, result any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -45,7 +41,6 @@ func jsonResponse(w http.ResponseWriter, result any) {
 	})
 }
 
-// errorResponse writes a CF error envelope.
 func errorResponse(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -55,8 +50,6 @@ func errorResponse(w http.ResponseWriter, code int, msg string) {
 		"result":  nil,
 	})
 }
-
-// --- New() validation -------------------------------------------------------
 
 func TestNew_MissingCredentials(t *testing.T) {
 	_, err := cfpkg.New(config.ProviderConfig{
@@ -109,8 +102,6 @@ func TestNew_ValidKeyPair(t *testing.T) {
 	}
 }
 
-// --- ListAccounts -----------------------------------------------------------
-
 func TestListAccounts(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/accounts" {
@@ -150,8 +141,6 @@ func TestListAccounts_APIError(t *testing.T) {
 	}
 }
 
-// --- ListZones --------------------------------------------------------------
-
 func TestListZones(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/zones" {
@@ -176,8 +165,6 @@ func TestListZones(t *testing.T) {
 		t.Errorf("unexpected zone: %+v", zones[0])
 	}
 }
-
-// --- ListRecords ------------------------------------------------------------
 
 func TestListRecords(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
@@ -242,8 +229,6 @@ func TestListRecords(t *testing.T) {
 	}
 }
 
-// --- CreateRecord -----------------------------------------------------------
-
 func TestCreateRecord(t *testing.T) {
 	var received map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -284,8 +269,6 @@ func TestCreateRecord(t *testing.T) {
 	}
 }
 
-// --- UpdateRecord -----------------------------------------------------------
-
 func TestUpdateRecord(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/zones/zone1/dns_records/rec1" {
@@ -323,8 +306,6 @@ func TestUpdateRecord(t *testing.T) {
 	}
 }
 
-// --- DeleteRecord -----------------------------------------------------------
-
 func TestDeleteRecord(t *testing.T) {
 	deleted := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -358,8 +339,6 @@ func TestDeleteRecord_APIError(t *testing.T) {
 		t.Error("expected error for missing record")
 	}
 }
-
-// --- ProviderName / FriendlyName --------------------------------------------
 
 func TestProviderIdentity(t *testing.T) {
 	p := newTestProvider(t, "http://localhost")

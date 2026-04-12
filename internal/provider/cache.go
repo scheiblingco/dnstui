@@ -5,7 +5,6 @@ import (
 	"fmt"
 )
 
-// SearchEntryKind identifies whether a search entry represents an account or a domain.
 type SearchEntryKind string
 
 const (
@@ -13,8 +12,6 @@ const (
 	SearchEntryKindDomain  SearchEntryKind = "domain"
 )
 
-// SearchEntry is a single item in the global search index.
-// Entries are pre-fetched at startup and used for Ctrl+K search.
 type SearchEntry struct {
 	// Kind is either SearchEntryKindAccount or SearchEntryKindDomain.
 	Kind SearchEntryKind
@@ -33,9 +30,6 @@ type SearchEntry struct {
 	Zone Zone
 }
 
-// BuildSearchCache fetches all accounts and zones from every provider and
-// returns a flat slice of SearchEntry values for use in the global search.
-// Each account produces an "account: " entry; each zone produces a "domain: " entry.
 func BuildSearchCache(ctx context.Context, providers []Provider) ([]SearchEntry, error) {
 	var entries []SearchEntry
 
@@ -52,20 +46,21 @@ func BuildSearchCache(ctx context.Context, providers []Provider) ([]SearchEntry,
 				Provider: p,
 				Account:  acc,
 			})
+		}
 
-			zones, err := p.ListZones(ctx, acc.ID)
-			if err != nil {
-				return nil, fmt.Errorf("provider %s, account %s: listing zones: %w", p.FriendlyName(), acc.Name, err)
-			}
+		// All provider support listing zones without an accountID, so we can fetch them all with a single call.
+		zones, err := p.ListZones(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("provider %s: listing zones: %w", p.FriendlyName(), err)
+		}
 
-			for _, z := range zones {
-				entries = append(entries, SearchEntry{
-					Kind:     SearchEntryKindDomain,
-					Label:    "domain: " + z.Name,
-					Provider: p,
-					Zone:     z,
-				})
-			}
+		for _, z := range zones {
+			entries = append(entries, SearchEntry{
+				Kind:     SearchEntryKindDomain,
+				Label:    "domain: " + z.Name,
+				Provider: p,
+				Zone:     z,
+			})
 		}
 	}
 

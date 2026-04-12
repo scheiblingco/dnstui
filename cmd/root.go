@@ -1,20 +1,21 @@
-// Package cmd wires the Cobra CLI and is the entry point for all subcommands.
 package cmd
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/scheiblingco/dnstui/internal/cache"
 	"github.com/scheiblingco/dnstui/internal/config"
+	dnslog "github.com/scheiblingco/dnstui/internal/log"
 	"github.com/scheiblingco/dnstui/internal/provider"
 	"github.com/scheiblingco/dnstui/internal/tui"
 
-	// Provider packages self-register via init(). Add new providers here.
 	_ "github.com/scheiblingco/dnstui/providers/cloudflare"
 	_ "github.com/scheiblingco/dnstui/providers/cloudns"
+	_ "github.com/scheiblingco/dnstui/providers/demo"
 	_ "github.com/scheiblingco/dnstui/providers/openprovider"
 	_ "github.com/scheiblingco/dnstui/providers/technitium"
 )
@@ -25,7 +26,6 @@ var (
 	v       = viper.New()
 )
 
-// rootCmd is the base command; running dnstui with no subcommand launches the TUI.
 var rootCmd = &cobra.Command{
 	Use:   "dnstui",
 	Short: "A terminal UI for managing DNS records across multiple providers",
@@ -39,9 +39,14 @@ Configuration can be provided via a YAML file, environment variables (DNSTUI_ pr
 			return fmt.Errorf("configuration error: %w", err)
 		}
 		cfg = loaded
+		if err := dnslog.Init(cfg.LogLevel, cfg.LogFile); err != nil {
+			return fmt.Errorf("initialising logger: %w", err)
+		}
+		slog.Debug("configuration loaded", "providers", len(cfg.Providers), "log_file", cfg.LogFile)
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		defer dnslog.Close()
 		if len(cfg.Providers) == 0 {
 			return fmt.Errorf("no providers configured — add at least one provider to your config file")
 		}
@@ -49,6 +54,7 @@ Configuration can be provided via a YAML file, environment variables (DNSTUI_ pr
 		if err != nil {
 			return fmt.Errorf("initialising providers: %w", err)
 		}
+		slog.Debug("providers initialised", "count", len(providers))
 		c, err := cache.New(cfg.Cache)
 		if err != nil {
 			return fmt.Errorf("initialising cache: %w", err)
@@ -59,7 +65,6 @@ Configuration can be provided via a YAML file, environment variables (DNSTUI_ pr
 	},
 }
 
-// Execute runs the root command and returns any error.
 func Execute() error {
 	return rootCmd.Execute()
 }
@@ -67,9 +72,10 @@ func Execute() error {
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "path to config file (default: $HOME/.config/dnstui/dnstui.yaml)")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "", "log level: debug, info, warn, error (overrides config)")
+	rootCmd.PersistentFlags().StringP("log-file", "L", "", "path to log file (logging silenced when empty)")
 
-	// Bind the log-level flag to Viper so it participates in the precedence chain.
 	_ = v.BindPFlag("log_level", rootCmd.PersistentFlags().Lookup("log-level"))
+	_ = v.BindPFlag("log_file", rootCmd.PersistentFlags().Lookup("log-file"))
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(providersCmd)

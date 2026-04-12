@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// newRequest builds an authenticated HTTP request against the Cloudflare API.
 func (p *cfProvider) newRequest(ctx context.Context, method, urlPath string, body any) (*http.Request, error) {
 	var bodyReader io.Reader
 	if body != nil {
@@ -42,9 +41,6 @@ func (p *cfProvider) newRequest(ctx context.Context, method, urlPath string, bod
 	return req, nil
 }
 
-// doRequest executes a single HTTP call with up to 3 attempts on transient
-// server errors (5xx), using exponential backoff between retries.
-// It returns the raw response body bytes and HTTP status code.
 func (p *cfProvider) doRequest(ctx context.Context, method, urlPath string, body any) ([]byte, int, error) {
 	const maxAttempts = 3
 
@@ -90,7 +86,6 @@ func (p *cfProvider) doRequest(ctx context.Context, method, urlPath string, body
 	return nil, 0, lastErr
 }
 
-// pagedPath appends pagination query parameters to basePath.
 func pagedPath(basePath string, page int) string {
 	sep := "?"
 	if strings.Contains(basePath, "?") {
@@ -99,8 +94,6 @@ func pagedPath(basePath string, page int) string {
 	return fmt.Sprintf("%s%spage=%d&per_page=100", basePath, sep, page)
 }
 
-// getAllPages fetches every page of a list endpoint and returns all results.
-// T must be a concrete Cloudflare resource type (cfAccount, cfZone, cfRecord).
 func getAllPages[T any](ctx context.Context, p *cfProvider, basePath string) ([]T, error) {
 	var all []T
 
@@ -128,7 +121,6 @@ func getAllPages[T any](ctx context.Context, p *cfProvider, basePath string) ([]
 	return all, nil
 }
 
-// doJSON executes a non-GET request and decodes the single-item result.
 func doJSON[T any](ctx context.Context, p *cfProvider, method, urlPath string, body any) (T, error) {
 	b, _, err := p.doRequest(ctx, method, urlPath, body)
 	if err != nil {

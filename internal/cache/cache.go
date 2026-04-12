@@ -1,14 +1,5 @@
 package cache
 
-// Package cache provides an in-memory TTL cache for provider account and zone
-// lists, with optional JSON persistence to disk between sessions.
-//
-// Usage:
-//
-//	c, _ := cache.New(cfg.Cache)
-//	defer c.Save()
-//	providers = cache.WrapAll(providers, c)
-
 import (
 	"encoding/json"
 	"fmt"
@@ -21,8 +12,6 @@ import (
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// ── Entry types ──────────────────────────────────────────────────────────────
-
 type accountEntry struct {
 	Data     []provider.Account `json:"data"`
 	CachedAt time.Time          `json:"cached_at"`
@@ -33,17 +22,11 @@ type zoneEntry struct {
 	CachedAt time.Time       `json:"cached_at"`
 }
 
-// diskData is the top-level structure serialised to the on-disk cache file.
 type diskData struct {
 	Accounts map[string]accountEntry `json:"accounts"`
 	Zones    map[string]zoneEntry    `json:"zones"`
 }
 
-// ── Cache ────────────────────────────────────────────────────────────────────
-
-// Cache is a thread-safe in-memory TTL cache for provider list results.
-// When DiskCache is enabled, it is serialised to disk on Save() and restored
-// on startup via New().
 type Cache struct {
 	mu       sync.Mutex
 	ttl      time.Duration
@@ -52,9 +35,6 @@ type Cache struct {
 	zones    map[string]zoneEntry
 }
 
-// New creates a Cache from the given CacheConfig.  If DiskCache is true and a
-// persisted cache file exists, any entries that are still within the TTL window
-// are preloaded into memory.
 func New(cfg config.CacheConfig) (*Cache, error) {
 	c := &Cache{
 		ttl:      time.Duration(cfg.TTLSeconds) * time.Second,
@@ -80,10 +60,6 @@ func diskCachePath() (string, error) {
 	return filepath.Join(dir, "dnstui", "cache.json"), nil
 }
 
-// ── Read / write ─────────────────────────────────────────────────────────────
-
-// GetAccounts returns cached accounts for key if the entry exists and is within
-// the TTL.  A zero TTL means entries never expire.
 func (c *Cache) GetAccounts(key string) ([]provider.Account, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -97,14 +73,12 @@ func (c *Cache) GetAccounts(key string) ([]provider.Account, bool) {
 	return e.Data, true
 }
 
-// SetAccounts stores accounts under key with the current timestamp.
 func (c *Cache) SetAccounts(key string, accounts []provider.Account) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.accounts[key] = accountEntry{Data: accounts, CachedAt: time.Now()}
 }
 
-// GetZones returns cached zones for key if the entry exists and is within the TTL.
 func (c *Cache) GetZones(key string) ([]provider.Zone, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -118,15 +92,12 @@ func (c *Cache) GetZones(key string) ([]provider.Zone, bool) {
 	return e.Data, true
 }
 
-// SetZones stores zones under key with the current timestamp.
 func (c *Cache) SetZones(key string, zones []provider.Zone) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.zones[key] = zoneEntry{Data: zones, CachedAt: time.Now()}
 }
 
-// Invalidate clears all in-memory cache entries.  Call Save afterwards to
-// persist the cleared state to disk.
 func (c *Cache) Invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -134,10 +105,6 @@ func (c *Cache) Invalidate() {
 	c.zones = make(map[string]zoneEntry)
 }
 
-// ── Persistence ──────────────────────────────────────────────────────────────
-
-// Save writes the current cache state to disk.  It is a no-op when disk
-// caching is disabled.
 func (c *Cache) Save() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -161,8 +128,6 @@ func (c *Cache) Save() error {
 	return nil
 }
 
-// load reads the on-disk cache file and imports entries that are still within
-// the TTL window.  Errors (missing file, JSON errors) are silently ignored.
 func (c *Cache) load() error {
 	b, err := os.ReadFile(c.diskPath)
 	if err != nil {
@@ -189,9 +154,6 @@ func (c *Cache) load() error {
 	return nil
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// Key returns a canonical cache key for the given provider/account combination.
 func Key(providerName, friendlyName, suffix string) string {
 	return providerName + ":" + friendlyName + ":" + suffix
 }

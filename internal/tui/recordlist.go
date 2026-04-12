@@ -7,30 +7,29 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/scheiblingco/dnstui/internal/provider"
 )
 
-// ── RecordList ────────────────────────────────────────────────────────────────
-
 var tableStyle = lipgloss.NewStyle().
 	Border(lipgloss.NormalBorder()).
 	BorderForeground(colorPrimary)
 
-// RecordList shows the DNS records for a single zone.
 type RecordList struct {
-	prov    provider.Provider
-	zone    provider.Zone
-	records []provider.Record
-	table   table.Model
-	loading bool
-	spinner spinner.Model
-	filter  string
+	prov        provider.Provider
+	zone        provider.Zone
+	records     []provider.Record
+	table       table.Model
+	loading     bool
+	spinner     spinner.Model
+	filter      string
+	filterInput textinput.Model
+	filtering   bool
 }
 
-// NewRecordList creates the record-table view for the given zone.
 func NewRecordList(p provider.Provider, z provider.Zone) *RecordList {
 	cols := []table.Column{
 		{Title: "Name", Width: 32},
@@ -52,11 +51,17 @@ func NewRecordList(p provider.Provider, z provider.Zone) *RecordList {
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorPrimary)
 
+	fi := textinput.New()
+	fi.Prompt = "/"
+	fi.PromptStyle = lipgloss.NewStyle().Foreground(colorPrimary)
+	fi.Placeholder = "filter…"
+
 	return &RecordList{
-		prov:    p,
-		zone:    z,
-		table:   t,
-		spinner: sp,
+		prov:        p,
+		zone:        z,
+		table:       t,
+		spinner:     sp,
+		filterInput: fi,
 	}
 }
 
@@ -73,8 +78,33 @@ func (m *RecordList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// While in filter mode, route all input to the text field.
+		if m.filtering {
+			switch msg.String() {
+			case "enter", "esc":
+				m.filtering = false
+				m.filterInput.Blur()
+				m.table.Focus()
+			case "ctrl+c":
+				return m, tea.Quit
+			default:
+				var cmd tea.Cmd
+				m.filterInput, cmd = m.filterInput.Update(msg)
+				m.filter = m.filterInput.Value()
+				m.table.SetRows(recordsToRows(m.records, m.filter))
+				return m, cmd
+			}
+			return m, nil
+		}
 		switch msg.String() {
 		case "esc":
+			if m.filter != "" {
+				// First Esc clears the filter, second pops the view.
+				m.filter = ""
+				m.filterInput.SetValue("")
+				m.table.SetRows(recordsToRows(m.records, ""))
+				return m, nil
+			}
 			return m, func() tea.Msg { return PopMsg{} }
 		case "r":
 			// Refresh.
@@ -110,6 +140,11 @@ func (m *RecordList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				deleteRecord(m.prov, m.zone.ID, rec.ID),
 			)
 			return m, func() tea.Msg { return PushMsg{Model: dlg} }
+		case "/":
+			m.filtering = true
+			m.table.Blur()
+			m.filterInput.Focus()
+			return m, textinput.Blink
 		}
 
 	case RecordsLoadedMsg:
@@ -164,11 +199,18 @@ func (m *RecordList) View() string {
 	}
 
 	body := tableStyle.Render(m.table.View())
-	help := styleHelp.Render("↑↓: navigate  n: new  e: edit  d: delete  r: refresh  /: search  esc: back")
-	return title + "\n" + body + "\n" + help
+
+	var filterBar string
+	if m.filtering {
+		filterBar = "\n" + m.filterInput.View()
+	} else if m.filter != "" {
+		filterBar = "\n" + styleSubtitle.Render("filter: "+m.filter+"  (/ to change, esc to clear)")
+	}
+
+	help := styleHelp.Render("↑↓: navigate  n: new  e: edit  d: delete  r: refresh  /: filter  esc: back")
+	return title + "\n" + body + filterBar + "\n" + help
 }
 
-// recordsToRows converts provider records to table rows, applying a filter.
 func recordsToRows(records []provider.Record, filter string) []table.Row {
 	rows := make([]table.Row, 0, len(records))
 	for _, r := range records {
@@ -189,8 +231,6 @@ func recordsToRows(records []provider.Record, filter string) []table.Row {
 	return rows
 }
 
-// formatRecordValue returns a human-readable summary of a record's value,
-// showing individual sub-fields for complex types like SRV, CAA, TLSA, SSHFP, NAPTR.
 func formatRecordValue(r provider.Record) string {
 	intExtra := func(key string) int {
 		if v, ok := r.Extra[key]; ok {

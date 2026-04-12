@@ -1,9 +1,3 @@
-// Package cloudns implements the ClouDNS DNS provider for dnstui.
-//
-// Authentication uses auth-id + auth-password (or sub-auth-id for sub-accounts)
-// sent as a JSON body on every request.
-//
-// Self-registers as provider type "cloudns" via init().
 package cloudns
 
 import (
@@ -29,7 +23,6 @@ func init() {
 
 const defaultBase = "https://api.cloudns.net"
 
-// Settings holds ClouDNS-specific credentials decoded from ProviderConfig.Settings.
 type Settings struct {
 	// AuthID is the main ClouDNS account auth-id.
 	AuthID int `mapstructure:"auth_id"`
@@ -47,7 +40,6 @@ type cnsProvider struct {
 	client   *http.Client
 }
 
-// New constructs a ClouDNS provider from a ProviderConfig.
 func New(cfg config.ProviderConfig) (provider.Provider, error) {
 	var s Settings
 	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
@@ -81,7 +73,6 @@ func New(cfg config.ProviderConfig) (provider.Provider, error) {
 func (p *cnsProvider) ProviderName() string { return "cloudns" }
 func (p *cnsProvider) FriendlyName() string { return p.name }
 
-// accountID returns the string identifier for the configured account.
 func (p *cnsProvider) accountID() string {
 	if p.settings.SubAuthID != 0 {
 		return "sub-" + strconv.Itoa(p.settings.SubAuthID)
@@ -89,7 +80,6 @@ func (p *cnsProvider) accountID() string {
 	return strconv.Itoa(p.settings.AuthID)
 }
 
-// authFields returns a map with the common authentication fields merged in.
 func (p *cnsProvider) authFields(extra map[string]any) map[string]any {
 	m := make(map[string]any, len(extra)+2)
 	for k, v := range extra {
@@ -104,7 +94,6 @@ func (p *cnsProvider) authFields(extra map[string]any) map[string]any {
 	return m
 }
 
-// post sends a POST request with a JSON body and returns the raw response bytes.
 func (p *cnsProvider) post(ctx context.Context, path string, query map[string]any) ([]byte, error) {
 	// b, err := json.Marshal(body)
 	// if err != nil {
@@ -141,9 +130,6 @@ func (p *cnsProvider) post(ctx context.Context, path string, query map[string]an
 	return data, nil
 }
 
-// checkErr parses the ClouDNS error envelope and returns an error if the API
-// reported a failure.  A response that does not look like an error envelope is
-// left unchanged.
 func checkErr(data []byte, path string) error {
 	var env struct {
 		Status string `json:"status"`
@@ -158,10 +144,6 @@ func checkErr(data []byte, path string) error {
 	return nil
 }
 
-// ── ListAccounts ──────────────────────────────────────────────────────────────
-
-// ListAccounts verifies credentials against /dns/login.json and returns a
-// single synthetic account representing the configured ClouDNS auth-id.
 func (p *cnsProvider) ListAccounts(ctx context.Context) ([]provider.Account, error) {
 	data, err := p.post(ctx, "/dns/login.json", p.authFields(nil))
 	if err != nil {
@@ -175,19 +157,12 @@ func (p *cnsProvider) ListAccounts(ctx context.Context) ([]provider.Account, err
 	}, nil
 }
 
-// ── ListZones ─────────────────────────────────────────────────────────────────
-
-// cnsZoneInfo is the per-zone object in the list-zones response.
 type cnsZoneInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Type string `json:"type"`
 }
 
-// ListZones returns all DNS zones for the account.  The accountID parameter is
-// ignored (ClouDNS uses auth credentials to determine scope).
-// Success response is a JSON array:
-// [{"name":"example.com","id":"123456","type":"master",...}, ...]
 func (p *cnsProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone, error) {
 	const pageSize = 100
 	var zones []provider.Zone
@@ -227,9 +202,6 @@ func (p *cnsProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone,
 	return zones, nil
 }
 
-// ── ListRecords ───────────────────────────────────────────────────────────────
-
-// cnsRecord is a single record in the /dns/records.json response object.
 type cnsRecord struct {
 	ID       string `json:"id"`
 	Host     string `json:"host"`
@@ -259,7 +231,6 @@ type cnsRecord struct {
 	Replace string `json:"replace,omitempty"`
 }
 
-// ListRecords returns all DNS records for the given zone name.
 func (p *cnsProvider) ListRecords(ctx context.Context, zoneID string) ([]provider.Record, error) {
 	query := p.authFields(map[string]any{"domain-name": zoneID})
 	data, err := p.post(ctx, "/dns/records.json", query)
@@ -336,8 +307,6 @@ func toRecord(r cnsRecord, zoneID string) provider.Record {
 	return rec
 }
 
-// ── CreateRecord ──────────────────────────────────────────────────────────────
-
 type cnsStatusResp struct {
 	Status string `json:"status"`
 	Desc   string `json:"statusDescription"`
@@ -346,7 +315,6 @@ type cnsStatusResp struct {
 	} `json:"data"`
 }
 
-// CreateRecord adds a new DNS record to the given zone.
 func (p *cnsProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
 	if r.Name == "@" {
 		r.Name = ""
@@ -396,9 +364,6 @@ func (p *cnsProvider) CreateRecord(ctx context.Context, zoneID string, r provide
 	return r, nil
 }
 
-// ── UpdateRecord ──────────────────────────────────────────────────────────────
-
-// UpdateRecord replaces an existing record identified by recordID.
 func (p *cnsProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, r provider.Record) (provider.Record, error) {
 	body := p.authFields(map[string]any{
 		"domain-name": zoneID,
@@ -429,9 +394,6 @@ func (p *cnsProvider) UpdateRecord(ctx context.Context, zoneID, recordID string,
 	return r, nil
 }
 
-// ── DeleteRecord ──────────────────────────────────────────────────────────────
-
-// DeleteRecord removes the record identified by recordID from the given zone.
 func (p *cnsProvider) DeleteRecord(ctx context.Context, zoneID, recordID string) error {
 	body := p.authFields(map[string]any{
 		"domain-name": zoneID,
@@ -443,8 +405,6 @@ func (p *cnsProvider) DeleteRecord(ctx context.Context, zoneID, recordID string)
 	}
 	return checkErr(data, "/dns/delete-record.json")
 }
-
-// ── Extra field helpers ───────────────────────────────────────────────────────
 
 func extraStr(r provider.Record, key string) string {
 	if v, ok := r.Extra[key].(string); ok {
