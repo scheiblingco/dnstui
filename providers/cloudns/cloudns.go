@@ -177,6 +177,12 @@ type cnsZoneInfo struct {
 
 // ListZones returns all DNS zones for the account.  The accountID parameter is
 // ignored (ClouDNS uses auth credentials to determine scope).
+// TODO: Fix format of API data
+// Example error responses
+// {"status":"Failed","statusDescription":"Missing required parameter 'page'."}
+// {"status":"Failed","statusDescription":"Wrong or missing required parameter 'rows-per-page'."}
+// Example success response
+// [{"name":"testdomaina.com","id":"123456","type":"master","hasBulk":false,"is_cloud":0,"zone":"domain","status":"1","serial":"2025110110","isUpdated":1}, {"name":"testdomain2.com","id":"9473965","type":"master","hasBulk":false,"is_cloud":0,"zone":"domain","status":"1","serial":"2025110110","isUpdated":1}]
 func (p *cnsProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone, error) {
 	const pageSize = 100
 	var zones []provider.Zone
@@ -197,7 +203,7 @@ func (p *cnsProvider) ListZones(ctx context.Context, _ string) ([]provider.Zone,
 		// The response is an object: {"count":"N","example.com":{...},...}
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("cloudns: parsing zone list: %w", err)
+			return nil, fmt.Errorf("cloudns: parsing zone list: %w, data %s", err, string(data))
 		}
 
 		// Parse the total count so we know when to stop paginating.

@@ -55,6 +55,15 @@ type opProvider struct {
 	client     *http.Client
 }
 
+func trimDomain(name, zone string) string {
+	xname := strings.TrimSuffix(name, zone)
+	xname = strings.TrimSuffix(xname, ".")
+	if xname == "@" {
+		return ""
+	}
+	return xname
+}
+
 // New constructs an Openprovider provider from a ProviderConfig.
 func New(cfg config.ProviderConfig) (provider.Provider, error) {
 	var s Settings
@@ -336,6 +345,12 @@ func providerToOpRecord(r provider.Record, zoneID string) opRecord {
 func (p *opProvider) CreateRecord(ctx context.Context, zoneID string, r provider.Record) (provider.Record, error) {
 	newRec := providerToOpRecord(r, zoneID)
 
+	newRec.Name = trimDomain(newRec.Name, zoneID)
+
+	if newRec.TTL < 600 {
+		newRec.TTL = 600
+	}
+
 	body := map[string]any{
 		"name":    zoneID,
 		"records": map[string]any{"add": []opRecord{newRec}},
@@ -360,11 +375,24 @@ func (p *opProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, 
 		return provider.Record{}, fmt.Errorf("openprovider: decoding original record from ID: %w", err)
 	}
 
-	if original.Name != zoneID {
-		original.Name = strings.TrimSuffix(original.Name, "."+zoneID)
-	}
-
 	updated := providerToOpRecord(r, zoneID)
+
+	original.Name = trimDomain(original.Name, zoneID)
+	updated.Name = trimDomain(updated.Name, zoneID)
+
+	// oRecName := strings.Clone(original.Name)
+
+	// original.Name = strings.TrimSuffix(original.Name, "."+zoneID)
+	// updated.Name = strings.TrimSuffix(r.Name, "."+zoneID)
+
+	// originalOriginalName := original.Name
+
+	// if original.Name != zoneID {
+	// 	original.Name = strings.TrimSuffix(original.Name, "."+zoneID)
+	// }
+
+	// return provider.Record{}, fmt.Errorf("Old value: %s A %s, old value before format: %s A %s, new value %s A %s", string(original.Name), original.Value, string(originalOriginalName), original.Value, string(updated.Name), updated.Value)
+
 	body := map[string]any{
 		"name": zoneID,
 		"records": map[string]any{
@@ -394,6 +422,9 @@ func (p *opProvider) DeleteRecord(ctx context.Context, zoneID, recordID string) 
 	if err := json.Unmarshal([]byte(recordID), &rec); err != nil {
 		return fmt.Errorf("openprovider: decoding record from ID: %w", err)
 	}
+
+	rec.Name = trimDomain(rec.Name, zoneID)
+
 	body := map[string]any{
 		"name":    zoneID,
 		"records": map[string]any{"remove": []opRecord{rec}},

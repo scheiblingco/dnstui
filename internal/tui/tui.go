@@ -7,6 +7,8 @@ package tui
 
 import (
 	"context"
+	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -247,15 +249,46 @@ func (m Model) View() string {
 
 	statusLine := ""
 	if m.errorText != "" {
-		statusLine = styleError.Render("✖ " + m.errorText)
+		statusLine = styleError.Render(wrapText("✖ "+m.errorText, m.width))
 	} else if m.statusText != "" {
-		statusLine = styleSuccess.Render("✔ " + m.statusText)
+		statusLine = styleSuccess.Render(wrapText("✔ "+m.statusText, m.width))
 	}
 
 	if statusLine == "" {
 		return content
 	}
 	return content + "\n" + statusLine
+}
+
+// wrapText inserts newlines into s so that no line exceeds width printable
+// columns. Words are kept intact; breaking only happens at whitespace. If
+// width is 0 (not yet known) s is returned unchanged.
+func wrapText(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return s
+	}
+	var sb strings.Builder
+	lineLen := 0
+	for i, w := range words {
+		wLen := utf8.RuneCountInString(w)
+		if i == 0 {
+			sb.WriteString(w)
+			lineLen = wLen
+		} else if lineLen+1+wLen <= width {
+			sb.WriteByte(' ')
+			sb.WriteString(w)
+			lineLen += 1 + wLen
+		} else {
+			sb.WriteByte('\n')
+			sb.WriteString(w)
+			lineLen = wLen
+		}
+	}
+	return sb.String()
 }
 
 // Run starts the Bubble Tea program with the given providers.

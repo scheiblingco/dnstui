@@ -448,7 +448,7 @@ func (m *RecordForm) submit() (tea.Model, tea.Cmd) {
 func (m *RecordForm) buildRecord() (provider.Record, string) {
 	name := strings.TrimSpace(m.nameInput.Value())
 	if name == "" {
-		return provider.Record{}, "Name is required"
+		name = "@"
 	}
 
 	ttlStr := strings.TrimSpace(m.ttlInput.Value())
