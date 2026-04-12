@@ -96,13 +96,18 @@ func (m *ProviderList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			return m, func() tea.Msg { return ErrorMsg{Err: msg.Err} }
 		}
-		// Find the selected provider.
 		item, ok := m.list.SelectedItem().(providerItem)
 		if !ok {
 			return m, nil
 		}
-		zoneView := NewZoneList(item.p, msg.Accounts)
-		return m, func() tea.Msg { return PushMsg{Model: zoneView} }
+		if len(msg.Accounts) == 1 {
+			// Single account — skip the selection step.
+			zoneView := NewZoneList(item.p, msg.Accounts)
+			return m, func() tea.Msg { return PushMsg{Model: zoneView} }
+		}
+		// Multiple accounts — let the user pick one.
+		accView := NewAccountList(item.p, msg.Accounts)
+		return m, func() tea.Msg { return PushMsg{Model: accView} }
 
 	case spinner.TickMsg:
 		if m.loading {
@@ -130,6 +135,72 @@ func loadAccounts(p provider.Provider) tea.Cmd {
 		accounts, err := p.ListAccounts(context.Background())
 		return AccountsLoadedMsg{Accounts: accounts, Err: err}
 	}
+}
+
+// ── AccountList ───────────────────────────────────────────────────────────────
+
+type accountItem struct{ a provider.Account }
+
+func (i accountItem) Title() string       { return i.a.Name }
+func (i accountItem) Description() string { return "id: " + i.a.ID }
+func (i accountItem) FilterValue() string { return i.a.Name }
+
+// AccountList is shown when a provider returns more than one account, letting
+// the user pick which account to browse.
+type AccountList struct {
+	prov     provider.Provider
+	accounts []provider.Account
+	list     list.Model
+}
+
+// NewAccountList creates the account-selection view.
+func NewAccountList(p provider.Provider, accounts []provider.Account) *AccountList {
+	items := make([]list.Item, len(accounts))
+	for i, a := range accounts {
+		items[i] = accountItem{a}
+	}
+	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	l.Title = fmt.Sprintf("%s — Accounts", p.FriendlyName())
+	l.SetShowStatusBar(true)
+	l.SetFilteringEnabled(true)
+	l.Styles.Title = styleTitle
+	l.Styles.TitleBar = lipgloss.NewStyle()
+	return &AccountList{prov: p, accounts: accounts, list: l}
+}
+
+func (m *AccountList) Init() tea.Cmd { return nil }
+
+func (m *AccountList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.list.SetSize(msg.Width, msg.Height)
+		return m, nil
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			return m, func() tea.Msg { return PopMsg{} }
+
+		case "enter", " ":
+			item, ok := m.list.SelectedItem().(accountItem)
+			if !ok {
+				return m, nil
+			}
+			zoneView := NewZoneList(m.prov, []provider.Account{item.a})
+			return m, func() tea.Msg { return PushMsg{Model: zoneView} }
+
+		case "q":
+			return m, tea.Quit
+		}
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m *AccountList) View() string {
+	return m.list.View() + "\n" + styleHelp.Render("enter: select  /: filter  esc: back  q: quit")
 }
 
 // ── ZoneList ─────────────────────────────────────────────────────────────────
