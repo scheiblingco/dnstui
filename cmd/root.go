@@ -7,12 +7,15 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/scheiblingco/dnstui/internal/cache"
 	"github.com/scheiblingco/dnstui/internal/config"
 	"github.com/scheiblingco/dnstui/internal/provider"
 	"github.com/scheiblingco/dnstui/internal/tui"
 
 	// Provider packages self-register via init(). Add new providers here.
 	_ "github.com/scheiblingco/dnstui/providers/cloudflare"
+	_ "github.com/scheiblingco/dnstui/providers/cloudns"
+	_ "github.com/scheiblingco/dnstui/providers/openprovider"
 	_ "github.com/scheiblingco/dnstui/providers/technitium"
 )
 
@@ -46,6 +49,12 @@ Configuration can be provided via a YAML file, environment variables (DNSTUI_ pr
 		if err != nil {
 			return fmt.Errorf("initialising providers: %w", err)
 		}
+		c, err := cache.New(cfg.Cache)
+		if err != nil {
+			return fmt.Errorf("initialising cache: %w", err)
+		}
+		defer func() { _ = c.Save() }()
+		providers = cache.WrapAll(providers, c)
 		return tui.Run(providers)
 	},
 }

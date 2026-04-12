@@ -216,8 +216,8 @@ Each directory is a self-contained Go package implementing the `provider.Provide
 |---|---|---|---|
 | `providers/cloudflare` | `cloudflare` | API token or API key + email | ✅ Complete |
 | `providers/technitium` | `technitium` | API key, HTTP header | ✅ Complete |
-| `providers/cloudns` | `cloudns` | auth-id + password (or sub-auth) | Phase 7 |
-| `providers/openprovider` | `openprovider` | API token | Phase 7 |
+| `providers/cloudns` | `cloudns` | auth-id + password (or sub-auth-id for sub-users) | ✅ Complete |
+| `providers/openprovider` | `openprovider` | static token or username + password | ✅ Complete |
 
 Provider-specific settings are decoded from `ProviderConfig.Settings` (a `map[string]any`) into a typed struct at construction time using `github.com/go-viper/mapstructure/v2`.
 
@@ -368,7 +368,7 @@ All four layers are managed by a single `*viper.Viper` instance created in `cmd/
 | 3 | Cloudflare provider | ✅ Complete |
 | 4 | Technitium provider | ✅ Complete |
 | 5 | TUI (Bubble Tea) — all views | ✅ Complete |
-| 6 | Caching (TTL + disk) | Planned |
-| 7 | ClouDNS and Openprovider | Planned |
+| 6 | Caching (TTL + disk) | ✅ Complete |
+| 7 | ClouDNS and Openprovider | ✅ Complete |
 | 8 | Error handling, logging, input validation | Planned |
 | 9 | Unit + integration tests, documentation | Planned |

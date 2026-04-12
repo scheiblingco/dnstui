@@ -34,8 +34,15 @@ providers:
   #     # For sub-auth:
   #     # sub_auth_id: "67890"
 
-  # --- Openprovider example ---
+  # --- Openprovider example (static token) ---
   # - name: "Openprovider"
   #   type: openprovider
   #   settings:
-  #     api_token: "YOUR_OPENPROVIDER_API_TOKEN"
+  #     token: "YOUR_OPENPROVIDER_API_TOKEN"
+
+  # --- Openprovider example (username + password) ---
+  # - name: "Openprovider"
+  #   type: openprovider
+  #   settings:
+  #     username: "your@email.com"
+  #     password: "YOUR_PASSWORD"
