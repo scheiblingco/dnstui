@@ -1,0 +1,81 @@
+version: 2
+
+project_name: dnstui
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dnstui
+    binary: dnstui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - macos
+    goarch:
+      - amd64
+    ldflags:
+      - "-s -w"
+
+archives:
+  - formats: [ tar.gz ]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+nfpms:
+  - id: packages
+    ids: [ dnstui ]
+    package_name: dnstui
+    vendor: scheiblingco
+    homepage: https://github.com/scheiblingco/dnstui
+    maintainer: Scheiblingco <support@scheibling.se>
+    description: >-
+      TUI for managing DNS records with various providers
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/local/bin
+
+
+uploads:
+  - name: "debpkg"
+    ids: ["packages"]
+    method: "PUT"
+    exts:
+      - deb
+    mode: archive
+    username: "pkg-push"
+    target: https://deb.pkg.lv/upload?dist=all&component=main
+    custom_artifact_name: true
+  
+  - name: "apkpkg"
+    method: "PUT"
+    ids: ["packages"]
+    exts:
+      - apk
+    mode: archive
+    username: "pkg-push"
+    target: https://alpine.pkg.lv/upload?repo=all
+    custom_artifact_name: true
+  
+  - name: "rpmpkg"
+    method: "PUT"
+    ids: ["packages"]
+    exts:
+      - rpm
+    mode: archive
+    username: "pkg-push"
+    target: https://rpm.pkg.lv/upload?repo=all&component=main
+    custom_artifact_name: true
+  
+release:
+  github:
+    owner: scheiblingco
+    name: dnstui

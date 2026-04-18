@@ -12,21 +12,23 @@ providers:
   - name: Demo
     type: demo
     settings: {}
-  # --- Cloudflare example ---
-  - name: "CF Personal"
-    type: cloudflare
-    settings:
-      api_token: "YOUR_CF_API_TOKEN"
-      # Alternatively, use API key + email:
-      # api_key: "YOUR_GLOBAL_API_KEY"
-      # api_email: "you@example.com"
 
-  # --- Technitium example ---
-  - name: "Home DNS"
-    type: technitium
-    settings:
-      base_url: "http://192.168.1.1:5380"
-      api_key: "YOUR_TECHNITIUM_API_KEY"
+
+  # # --- Cloudflare example ---
+  # - name: "CF Personal"
+  #   type: cloudflare
+  #   settings:
+  #     api_token: "YOUR_CF_API_TOKEN"
+  #     # Alternatively, use API key + email:
+  #     # api_key: "YOUR_GLOBAL_API_KEY"
+  #     # api_email: "you@example.com"
+
+  # # --- Technitium example ---
+  # - name: "Home DNS"
+  #   type: technitium
+  #   settings:
+  #     base_url: "http://192.168.1.1:5380"
+  #     api_key: "YOUR_TECHNITIUM_API_KEY"
 
   # --- ClouDNS example ---
   # - name: "ClouDNS Main"
